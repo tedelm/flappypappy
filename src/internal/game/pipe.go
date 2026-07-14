@@ -89,19 +89,54 @@ func (pm *PipeManager) Draw(screen *ebiten.Image) {
 		w := float32(PipeWidth)
 
 		topH := float32(p.GapY)
-		vector.DrawFilledRect(screen, x, 0, w, topH, ColorPipe, true)
-		vector.StrokeRect(screen, x, 0, w, topH, 2, ColorPipeEdge, true)
+		drawKegStack(screen, x, 0, w, topH)
 
 		gapBottom := float32(p.GapY + p.GapH)
 		bottomH := float32(ScreenH-GroundHeight) - gapBottom
-		vector.DrawFilledRect(screen, x, gapBottom, w, bottomH, ColorPipe, true)
-		vector.StrokeRect(screen, x, gapBottom, w, bottomH, 2, ColorPipeEdge, true)
+		drawKegStack(screen, x, gapBottom, w, bottomH)
 
-		lipW := w + 8
-		lipH := float32(24)
-		vector.DrawFilledRect(screen, x-4, topH-lipH, lipW, lipH, ColorPipeEdge, true)
-		vector.DrawFilledRect(screen, x-4, gapBottom, lipW, lipH, ColorPipeEdge, true)
+		rimW := w + 8
+		rimH := float32(24)
+		drawKegRim(screen, x-4, topH-rimH, rimW, rimH)
+		drawKegRim(screen, x-4, gapBottom, rimW, rimH)
 	}
+}
+
+func drawKegStack(screen *ebiten.Image, x, y, w, h float32) {
+	segH := float32(KegSegmentH)
+	remaining := h
+	cy := y + h - segH
+	for remaining > 0 {
+		drawH := segH
+		if remaining < segH {
+			drawH = remaining
+			cy = y
+		}
+		drawKegSegment(screen, x, cy, w, drawH)
+		remaining -= segH
+		cy -= segH
+	}
+}
+
+func drawKegSegment(screen *ebiten.Image, x, y, w, h float32) {
+	inset := float32(2)
+	vector.DrawFilledRect(screen, x+inset, y, w-inset*2, h, ColorKeg, true)
+	vector.StrokeRect(screen, x+inset, y, w-inset*2, h, 1.5, ColorKegEdge, true)
+
+	bandY1 := y + h*0.3
+	bandY2 := y + h*0.7
+	vector.StrokeLine(screen, x+inset, bandY1, x+w-inset, bandY1, 2, ColorKegBand, true)
+	vector.StrokeLine(screen, x+inset, bandY2, x+w-inset, bandY2, 2, ColorKegBand, true)
+
+	cx := x + w/2
+	vector.DrawFilledCircle(screen, cx, y, 4, ColorKegRim, true)
+	vector.DrawFilledCircle(screen, cx, y+h, 4, ColorKegRim, true)
+}
+
+func drawKegRim(screen *ebiten.Image, x, y, w, h float32) {
+	vector.DrawFilledRect(screen, x, y, w, h, ColorKegRim, true)
+	vector.StrokeRect(screen, x, y, w, h, 2, ColorKegEdge, true)
+	vector.StrokeLine(screen, x+4, y+h/2, x+w-4, y+h/2, 2, ColorKegBand, true)
 }
 
 func aabbOverlap(ax, ay, aw, ah, bx, by, bw, bh float64) bool {

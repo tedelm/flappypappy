@@ -96,9 +96,7 @@ func sinBob(frame int) float64 {
 func (g *Game) Draw(screen *ebiten.Image) {
 	screen.Fill(ColorSky)
 
-	groundY := float32(ScreenH - GroundHeight)
-	vector.DrawFilledRect(screen, 0, groundY, ScreenW, GroundHeight, ColorGround, true)
-	vector.StrokeLine(screen, 0, groundY, ScreenW, groundY, 2, ColorPipeEdge, true)
+	drawFoamGround(screen)
 
 	g.pipes.Draw(screen)
 	g.bird.Draw(screen)
@@ -116,4 +114,28 @@ func (g *Game) Draw(screen *ebiten.Image) {
 
 func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
 	return ScreenW, ScreenH
+}
+
+func drawFoamGround(screen *ebiten.Image) {
+	groundY := float32(ScreenH - GroundHeight)
+	vector.DrawFilledRect(screen, 0, groundY, ScreenW, GroundHeight, ColorFoam, true)
+
+	waveRadii := []float32{12, 10, 14, 9, 13, 11, 10, 14, 12, 9, 13, 10, 14, 11, 12, 10, 13, 9}
+	for i, r := range waveRadii {
+		cx := float32(i*23 + 8)
+		if cx > ScreenW+14 {
+			break
+		}
+		vector.DrawFilledCircle(screen, cx, groundY+2, r, ColorFoamLight, true)
+	}
+
+	bubbleData := [][3]float32{
+		{18, 28, 3}, {45, 45, 2}, {72, 22, 4}, {98, 52, 2}, {125, 35, 3},
+		{158, 48, 2}, {185, 25, 3}, {212, 55, 2}, {245, 38, 4}, {278, 20, 2},
+		{305, 50, 3}, {332, 30, 2}, {358, 42, 3}, {30, 60, 2}, {110, 65, 3},
+		{200, 58, 2}, {290, 62, 3}, {370, 55, 2},
+	}
+	for _, b := range bubbleData {
+		vector.DrawFilledCircle(screen, b[0], groundY+b[1], b[2], ColorBubble, true)
+	}
 }
