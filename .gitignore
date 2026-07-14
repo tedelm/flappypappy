@@ -17,3 +17,7 @@ go.work.sum
 # IDE
 .idea/
 .vscode/
+
+# Web build output
+docs/*
+!docs/.gitkeep

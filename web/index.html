@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <meta name="theme-color" content="#87CEEB">
+  <meta name="description" content="Fly a pint through keg stacks">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Flappy Beer">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <title>Flappy Beer</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      background: #1a1a2e;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      touch-action: none;
+    }
+    #loading {
+      color: #fff;
+      font-family: system-ui, sans-serif;
+      font-size: 1.2rem;
+      text-align: center;
+    }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+  <p id="loading">Pouring beer...</p>
+  <script src="wasm_exec.js"></script>
+  <script>
+    if (!WebAssembly.instantiateStreaming) {
+      WebAssembly.instantiateStreaming = async (resp, importObject) => {
+        const source = await (await resp).arrayBuffer();
+        return await WebAssembly.instantiate(source, importObject);
+      };
+    }
+
+    const go = new Go();
+    WebAssembly.instantiateStreaming(fetch("./flappy.wasm"), go.importObject)
+      .then((result) => {
+        document.getElementById("loading").style.display = "none";
+        go.run(result.instance);
+      })
+      .catch((err) => {
+        document.getElementById("loading").textContent = "Failed to load game: " + err;
+      });
+
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("./sw.js").catch(() => {});
+      });
+    }
+  </script>
+</body>
+</html>
