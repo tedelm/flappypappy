@@ -413,7 +413,7 @@ func drawPubButton(screen *ebiten.Image, label string, x, y, w, h float64) {
 }
 
 func drawContinuePrompt(screen *ebiten.Image) {
-	drawLabel(screen, "Life lost", ScreenW/2, continueBtnY-28, ColorKegRim)
+	drawLabel(screen, "You beer was spilled!", ScreenW/2, continueBtnY-28, ColorKegRim)
 	x, y, w, h := continueButtonBounds()
 	drawPubButton(screen, "CONTINUE", x, y, w, h)
 }
