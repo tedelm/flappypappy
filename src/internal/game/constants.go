@@ -21,6 +21,27 @@ const (
 	LifeGlassGap        = 6
 	LifeHUDMargin       = 10
 
+	MaxHighScores    = 10
+	MaxPlayerNameLen = 8
+
+	BgParallaxFactor = 0.35
+
+	DecorChunkMin         = 200
+	DecorChunkJitter      = 120
+	DecorPaintChance      = 45
+	DecorStoolY           = ScreenH - GroundHeight - 55
+	DecorPaintingY        = 100
+	DecorStoolScale       = 0.135
+	DecorPaintingScale    = 0.25
+	DecorTableChunkMin    = 280
+	DecorTableChunkJitter = 160
+	DecorTableChance      = 40
+	DecorTableY           = ScreenH - GroundHeight - 48
+	DecorTableW           = 56
+	DecorTableH           = 14
+	DecorStoolsPerTable   = 3
+	DecorStoolAroundX     = 32
+
 	BirdStartX = 80
 	BirdWidth  = 28
 	BirdHeight = 40
@@ -28,13 +49,16 @@ const (
 
 var (
 	ColorSky       = color.RGBA{135, 206, 235, 255}
+	ColorPubBase   = color.RGBA{42, 28, 24, 255}
+	ColorText      = color.RGBA{245, 245, 240, 255}
+	ColorTextMuted = color.RGBA{200, 200, 195, 255}
 	ColorKeg       = color.RGBA{139, 69, 19, 255}
 	ColorKegBand   = color.RGBA{184, 134, 11, 255}
 	ColorKegRim    = color.RGBA{101, 67, 33, 255}
 	ColorKegEdge   = color.RGBA{80, 50, 20, 255}
 	ColorGlass     = color.RGBA{200, 200, 210, 255}
 	ColorGlassEdge = color.RGBA{140, 140, 150, 255}
-	ColorBeer   = color.RGBA{218, 165, 32, 255}
-	ColorFoam   = color.RGBA{255, 250, 240, 255}
-	ColorBubble = color.RGBA{255, 230, 150, 255}
+	ColorBeer      = color.RGBA{218, 165, 32, 255}
+	ColorFoam      = color.RGBA{255, 250, 240, 255}
+	ColorBubble    = color.RGBA{255, 230, 150, 255}
 )

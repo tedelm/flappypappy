@@ -50,6 +50,10 @@ func (pm *PipeManager) spawn() {
 	})
 }
 
+func (pm *PipeManager) Speed() float64 {
+	return pm.pipeSpeed
+}
+
 func (pm *PipeManager) Update() {
 	pm.spawnTimer--
 	if pm.spawnTimer <= 0 {

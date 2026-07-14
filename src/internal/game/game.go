@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"image/color"
 	"math"
+	"math/rand"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/hajimehoshi/ebiten/v2"
-	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 	"github.com/hajimehoshi/ebiten/v2/text/v2"
 	"github.com/hajimehoshi/ebiten/v2/vector"
@@ -45,12 +47,24 @@ const (
 	difficultyTapPadX   = 8
 	difficultyTapPadY   = 12
 	glassTapPad         = 14
-	restartBtnW         = 160
-	restartBtnH         = 40
-	restartBtnY         = ScreenH/2 + 24
 	continueBtnW        = 160
 	continueBtnH        = 40
 	continueBtnY        = ScreenH/2 + 24
+	saveBtnW            = 160
+	saveBtnH            = 40
+	backBtnW            = 160
+	backBtnH            = 40
+	backBtnY            = ScreenH - GroundHeight - 56
+	nameFieldW          = 200
+	nameFieldH          = 36
+	enterNameTitleY     = 110
+	enterNameScoreY     = 175
+	enterNameLabelY     = 250
+	nameFieldY          = 285
+	saveBtnY            = nameFieldY + nameFieldH + 24
+	highScoresLinkY     = ScreenH/2 + 170
+	highScoresLinkPadX  = 12
+	highScoresLinkPadY  = 8
 )
 
 func difficultyLabelX(d Difficulty) float64 {
@@ -82,7 +96,8 @@ const (
 	StateReady State = iota
 	StatePlaying
 	StateContinue
-	StateGameOver
+	StateEnterName
+	StateHighScores
 )
 
 type Game struct {
@@ -91,6 +106,10 @@ type Game struct {
 	difficulty       Difficulty
 	lives            int
 	invincibleFrames int
+	playerName       string
+	highScores       *HighScores
+	bgScrollX        float64
+	decorSeed        int
 	bird             *Bird
 	pipes            *PipeManager
 	frames           int
@@ -103,6 +122,7 @@ func New() *Game {
 		difficulty: DifficultyEasy,
 		bird:       NewBird(),
 		pipes:      NewPipeManager(),
+		highScores: NewHighScores(),
 	}
 }
 
@@ -116,6 +136,9 @@ func (g *Game) reset() {
 	g.frames = 0
 	g.lives = 0
 	g.invincibleFrames = 0
+	g.playerName = ""
+	g.bgScrollX = 0
+	g.decorSeed = 0
 	g.bird.Reset()
 	g.pipes.Reset()
 }
@@ -128,6 +151,9 @@ func (g *Game) startGame() {
 	g.pipes.Reset()
 	g.lives = MaxLives
 	g.invincibleFrames = 0
+	g.playerName = ""
+	g.bgScrollX = 0
+	g.decorSeed = rand.Int()
 	g.state = StatePlaying
 	g.bird.Flap()
 }
@@ -137,7 +163,8 @@ func (g *Game) loseLife() {
 	if g.lives > 0 {
 		g.state = StateContinue
 	} else {
-		g.state = StateGameOver
+		g.playerName = ""
+		g.state = StateEnterName
 	}
 }
 
@@ -146,6 +173,11 @@ func (g *Game) continueGame() {
 	g.bird.Flap()
 	g.invincibleFrames = LifeInvincibleTicks
 	g.state = StatePlaying
+}
+
+func (g *Game) submitHighScore() {
+	g.highScores.Add(g.playerName, g.displayScore())
+	g.reset()
 }
 
 func (g *Game) flapInput() bool {
@@ -200,24 +232,28 @@ func (g *Game) readyStartInputAt(px, py float64) bool {
 	return pointInRect(px, py, gx, gy, gw, gh)
 }
 
-func restartButtonBounds() (x, y, w, h float64) {
-	return (ScreenW - restartBtnW) / 2, restartBtnY, restartBtnW, restartBtnH
-}
-
 func continueButtonBounds() (x, y, w, h float64) {
 	return (ScreenW - continueBtnW) / 2, continueBtnY, continueBtnW, continueBtnH
 }
 
-func (g *Game) gameOverRestartInput() bool {
-	if inpututil.IsKeyJustPressed(ebiten.KeySpace) {
-		return true
-	}
-	px, py, ok := g.readyPointerJustPressed()
-	if !ok {
-		return false
-	}
-	x, y, w, h := restartButtonBounds()
-	return pointInRect(px, py, x, y, w, h)
+func saveButtonBounds() (x, y, w, h float64) {
+	return (ScreenW - saveBtnW) / 2, saveBtnY, saveBtnW, saveBtnH
+}
+
+func backButtonBounds() (x, y, w, h float64) {
+	return (ScreenW - backBtnW) / 2, backBtnY, backBtnW, backBtnH
+}
+
+func highScoresLinkBounds() (x, y, w, h float64) {
+	w = 180
+	h = 18 + highScoresLinkPadY*2
+	x = (ScreenW - w) / 2
+	y = highScoresLinkY - highScoresLinkPadY
+	return x, y, w, h
+}
+
+func nameFieldBounds() (x, y, w, h float64) {
+	return (ScreenW - nameFieldW) / 2, nameFieldY, nameFieldW, nameFieldH
 }
 
 func (g *Game) continueInput() bool {
@@ -232,6 +268,57 @@ func (g *Game) continueInput() bool {
 	return pointInRect(px, py, x, y, w, h)
 }
 
+func (g *Game) saveHighScoreInput() bool {
+	if inpututil.IsKeyJustPressed(ebiten.KeyEnter) {
+		return true
+	}
+	px, py, ok := g.readyPointerJustPressed()
+	if !ok {
+		return false
+	}
+	x, y, w, h := saveButtonBounds()
+	return pointInRect(px, py, x, y, w, h)
+}
+
+func (g *Game) highScoresBackInput() bool {
+	if inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
+		return true
+	}
+	px, py, ok := g.readyPointerJustPressed()
+	if !ok {
+		return false
+	}
+	x, y, w, h := backButtonBounds()
+	return pointInRect(px, py, x, y, w, h)
+}
+
+func (g *Game) appendNameInput(r rune) {
+	if !unicode.IsLetter(r) && !unicode.IsDigit(r) {
+		return
+	}
+	if len([]rune(g.playerName)) >= MaxPlayerNameLen {
+		return
+	}
+	g.playerName += string(unicode.ToUpper(r))
+}
+
+func (g *Game) backspaceNameInput() {
+	if g.playerName == "" {
+		return
+	}
+	_, size := utf8.DecodeLastRuneInString(g.playerName)
+	g.playerName = g.playerName[:len(g.playerName)-size]
+}
+
+func (g *Game) updateNameInput() {
+	for _, r := range ebiten.AppendInputChars(nil) {
+		g.appendNameInput(r)
+	}
+	if inpututil.IsKeyJustPressed(ebiten.KeyBackspace) {
+		g.backspaceNameInput()
+	}
+}
+
 func (g *Game) Update() error {
 	g.frames++
 
@@ -242,7 +329,10 @@ func (g *Game) Update() error {
 		if inpututil.IsKeyJustPressed(ebiten.KeySpace) {
 			g.startGame()
 		} else if px, py, ok := g.readyPointerJustPressed(); ok {
-			if d, hit := difficultyAtPointer(px, py); hit {
+			lx, ly, lw, lh := highScoresLinkBounds()
+			if pointInRect(px, py, lx, ly, lw, lh) {
+				g.state = StateHighScores
+			} else if d, hit := difficultyAtPointer(px, py); hit {
 				g.difficulty = d
 			} else if g.readyStartInputAt(px, py) {
 				g.startGame()
@@ -255,6 +345,7 @@ func (g *Game) Update() error {
 	case StatePlaying:
 		g.bird.Update()
 		g.pipes.Update()
+		g.bgScrollX += g.pipes.Speed() * BgParallaxFactor
 		g.rawScore += g.pipes.CheckScore(g.bird.X)
 
 		if g.invincibleFrames > 0 {
@@ -275,9 +366,15 @@ func (g *Game) Update() error {
 			g.continueGame()
 		}
 
-	case StateGameOver:
-		if g.gameOverRestartInput() {
-			g.reset()
+	case StateEnterName:
+		g.updateNameInput()
+		if g.saveHighScoreInput() {
+			g.submitHighScore()
+		}
+
+	case StateHighScores:
+		if g.highScoresBackInput() {
+			g.state = StateReady
 		}
 	}
 
@@ -297,35 +394,39 @@ func sinBob(frame int) float64 {
 }
 
 func (g *Game) Draw(screen *ebiten.Image) {
-	screen.Fill(ColorSky)
+	drawPubBackground(screen, g.bgScrollX, g.decorSeed)
 
 	g.pipes.Draw(screen)
 	drawPubForeground(screen)
 
-	if g.state == StateReady {
+	switch g.state {
+	case StateReady:
 		drawTitle(screen, "Flappy Pappy", ScreenW/2, 140)
-		drawSubtitle(screen, "Brought to you by PappaPuben", ScreenW/2, ScreenH/2-100)
+		drawSubtitle(screen, "powered by PappaPuben", ScreenW/2, ScreenH/2-100)
 		drawDifficultySelector(screen, g.difficulty)
 		g.bird.Draw(screen)
-		ebitenutil.DebugPrintAt(screen, "Tap the beer to Start", ScreenW/2-70, ScreenH/2+90)
-		ebitenutil.DebugPrintAt(screen, "Tap a level to choose", ScreenW/2-60, ScreenH/2+110)
-	} else {
+		drawLabel(screen, "Tap the beer to Start", ScreenW/2, ScreenH/2+90, ColorText)
+		drawLabel(screen, "Tap a level to choose", ScreenW/2, ScreenH/2+110, ColorText)
+		drawHighScoresLink(screen)
+
+	case StateHighScores:
+		drawHighScoresScreen(screen, g.highScores)
+
+	default:
 		g.bird.Draw(screen)
 		switch g.state {
 		case StateContinue:
 			drawContinuePrompt(screen)
-		case StateGameOver:
-			ebitenutil.DebugPrintAt(screen, "GAME OVER", ScreenW/2-40, ScreenH/2-40)
-			ebitenutil.DebugPrintAt(screen, fmt.Sprintf("Score: %d", g.displayScore()), ScreenW/2-35, ScreenH/2-20)
-			drawRestartButton(screen)
+		case StateEnterName:
+			drawEnterNameScreen(screen, g)
 		}
 	}
 
 	if g.state == StatePlaying || g.state == StateContinue {
-		ebitenutil.DebugPrintAt(screen, fmt.Sprintf("%d", g.displayScore()), ScreenW/2-10, 20)
+		drawLabel(screen, fmt.Sprintf("%d", g.displayScore()), ScreenW/2, 20, ColorText)
 	}
 
-	if g.state == StatePlaying || g.state == StateContinue || g.state == StateGameOver {
+	if g.state == StatePlaying || g.state == StateContinue {
 		drawLifeHUD(screen, g.lives)
 	}
 }
@@ -335,7 +436,7 @@ func drawTitle(screen *ebiten.Image, str string, centerX, y float64) {
 	op.PrimaryAlign = text.AlignCenter
 	op.SecondaryAlign = text.AlignStart
 	op.GeoM.Translate(centerX, y)
-	op.ColorScale.ScaleWithColor(ColorKegRim)
+	op.ColorScale.ScaleWithColor(ColorText)
 	text.Draw(screen, str, titleFace, op)
 }
 
@@ -344,34 +445,24 @@ func drawSubtitle(screen *ebiten.Image, str string, centerX, y float64) {
 	op.PrimaryAlign = text.AlignCenter
 	op.SecondaryAlign = text.AlignStart
 	op.GeoM.Translate(centerX, y)
-	op.ColorScale.ScaleWithColor(ColorKegRim)
+	op.ColorScale.ScaleWithColor(ColorText)
 	text.Draw(screen, str, subtitleFace, op)
 }
-
-/* func drawText(screen *ebiten.Image, str string, centerX, y float64) {
-	op := &text.DrawOptions{}
-	op.PrimaryAlign = text.AlignCenter
-	op.SecondaryAlign = text.AlignStart
-	op.GeoM.Translate(centerX, y)
-	op.ColorScale.ScaleWithColor(ColorKegRim)
-	labelFace.Size = 18
-	text.Draw(screen, str, labelFace, op)
-} */
 
 func drawDifficultySelector(screen *ebiten.Image, selected Difficulty) {
 	labels := []string{DifficultyEasy.Name(), DifficultyHard.Name(), DifficultyInsane.Name()}
 
 	for i, label := range labels {
-		col := ColorKegEdge
+		col := ColorTextMuted
 		if Difficulty(i) == selected {
-			col = ColorKegRim
+			col = ColorText
 		}
 		drawLabel(screen, label, difficultyLabelX(Difficulty(i)), difficultyLabelY, col)
 	}
 
 	cfg := selected.Config()
 	multLabel := fmt.Sprintf("%dx score", cfg.ScoreMultiplier)
-	drawLabel(screen, multLabel, ScreenW/2, difficultyLabelY+28, ColorKegBand)
+	drawLabel(screen, multLabel, ScreenW/2, difficultyLabelY+28, ColorText)
 }
 
 func drawLabel(screen *ebiten.Image, str string, centerX, y float64, col color.Color) {
@@ -409,18 +500,53 @@ func drawLifeHUD(screen *ebiten.Image, lives int) {
 func drawPubButton(screen *ebiten.Image, label string, x, y, w, h float64) {
 	vector.DrawFilledRect(screen, float32(x), float32(y), float32(w), float32(h), ColorKegBand, true)
 	vector.StrokeRect(screen, float32(x), float32(y), float32(w), float32(h), 2, ColorKegEdge, true)
-	drawLabel(screen, label, x+w/2, y+h/2-9, ColorKegRim)
+	drawLabel(screen, label, x+w/2, y+h/2-9, ColorText)
 }
 
 func drawContinuePrompt(screen *ebiten.Image) {
-	drawLabel(screen, "You beer was spilled!", ScreenW/2, continueBtnY-28, ColorKegRim)
+	drawLabel(screen, "Ah, no! Your beer is a memory now!", ScreenW/2, continueBtnY-28, ColorText)
 	x, y, w, h := continueButtonBounds()
 	drawPubButton(screen, "CONTINUE", x, y, w, h)
 }
 
-func drawRestartButton(screen *ebiten.Image) {
-	x, y, w, h := restartButtonBounds()
-	drawPubButton(screen, "RESTART", x, y, w, h)
+func drawHighScoresLink(screen *ebiten.Image) {
+	drawLabel(screen, "<< HIGH SCORES >>", ScreenW/2, highScoresLinkY, ColorText)
+}
+
+func drawEnterNameScreen(screen *ebiten.Image, g *Game) {
+	drawTitle(screen, "GAME OVER", ScreenW/2, enterNameTitleY)
+	drawTitle(screen, fmt.Sprintf("Score: %d", g.displayScore()), ScreenW/2, enterNameScoreY)
+	drawLabel(screen, "Enter your name", ScreenW/2, enterNameLabelY, ColorText)
+
+	x, y, w, h := nameFieldBounds()
+	vector.DrawFilledRect(screen, float32(x), float32(y), float32(w), float32(h), ColorGlass, true)
+	vector.StrokeRect(screen, float32(x), float32(y), float32(w), float32(h), 2, ColorGlassEdge, true)
+
+	display := g.playerName
+	if g.frames%60 < 30 {
+		display += "_"
+	}
+	drawLabel(screen, display, ScreenW/2, y+9, ColorText)
+
+	sx, sy, sw, sh := saveButtonBounds()
+	drawPubButton(screen, "SAVE", sx, sy, sw, sh)
+}
+
+func drawHighScoresScreen(screen *ebiten.Image, scores *HighScores) {
+	drawTitle(screen, "HIGH SCORES", ScreenW/2, 80)
+
+	entries := scores.List()
+	if len(entries) == 0 {
+		drawLabel(screen, "No scores yet", ScreenW/2, 180, ColorTextMuted)
+	} else {
+		for i, e := range entries {
+			line := fmt.Sprintf("%d. %-8s %d", i+1, e.Name, e.Score)
+			drawLabel(screen, line, ScreenW/2, 140+float64(i)*28, ColorText)
+		}
+	}
+
+	bx, by, bw, bh := backButtonBounds()
+	drawPubButton(screen, "BACK", bx, by, bw, bh)
 }
 
 func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
