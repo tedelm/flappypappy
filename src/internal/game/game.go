@@ -19,11 +19,12 @@ const (
 )
 
 type Game struct {
-	state  State
-	score  int
-	bird   *Bird
-	pipes  *PipeManager
-	frames int
+	state    State
+	score    int
+	bird     *Bird
+	pipes    *PipeManager
+	frames   int
+	touchIDs []ebiten.TouchID
 }
 
 func New() *Game {
@@ -43,8 +44,12 @@ func (g *Game) reset() {
 }
 
 func (g *Game) flapInput() bool {
-	return inpututil.IsKeyJustPressed(ebiten.KeySpace) ||
-		inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft)
+	if inpututil.IsKeyJustPressed(ebiten.KeySpace) ||
+		inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
+		return true
+	}
+	g.touchIDs = inpututil.AppendJustPressedTouchIDs(g.touchIDs[:0])
+	return len(g.touchIDs) > 0
 }
 
 func (g *Game) Update() error {
@@ -103,10 +108,10 @@ func (g *Game) Draw(screen *ebiten.Image) {
 
 	switch g.state {
 	case StateReady:
-		ebitenutil.DebugPrintAt(screen, "Press SPACE or Click to Start", ScreenW/2-110, ScreenH/2-40)
+		ebitenutil.DebugPrintAt(screen, "Tap or press SPACE to Start", ScreenW/2-110, ScreenH/2-40)
 	case StateGameOver:
 		ebitenutil.DebugPrintAt(screen, "GAME OVER", ScreenW/2-40, ScreenH/2-40)
-		ebitenutil.DebugPrintAt(screen, "Press SPACE or Click to Restart", ScreenW/2-120, ScreenH/2-10)
+		ebitenutil.DebugPrintAt(screen, "Tap or press SPACE to Restart", ScreenW/2-120, ScreenH/2-10)
 	}
 
 	ebitenutil.DebugPrintAt(screen, fmt.Sprintf("%d", g.score), ScreenW/2-10, 20)
