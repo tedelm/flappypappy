@@ -10,7 +10,7 @@ import (
 
 func main() {
 	ebiten.SetWindowSize(game.ScreenW, game.ScreenH)
-	ebiten.SetWindowTitle("Flappy Bird")
+	ebiten.SetWindowTitle("Flappy Pappy")
 	ebiten.SetWindowResizingMode(ebiten.WindowResizingModeDisabled)
 
 	g := game.New()

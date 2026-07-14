@@ -9,19 +9,28 @@ import (
 )
 
 type Bird struct {
-	X, Y   float64
-	VY     float64
-	Width  float64
-	Height float64
+	X, Y          float64
+	VY            float64
+	Width         float64
+	Height        float64
+	gravity       float64
+	flapStrength  float64
 }
 
 func NewBird() *Bird {
-	return &Bird{
+	b := &Bird{
 		X:      BirdStartX,
 		Y:      float64(ScreenH-GroundHeight) / 2,
 		Width:  BirdWidth,
 		Height: BirdHeight,
 	}
+	b.ApplyConfig(DifficultyEasy.Config())
+	return b
+}
+
+func (b *Bird) ApplyConfig(cfg DifficultyConfig) {
+	b.gravity = cfg.Gravity
+	b.flapStrength = cfg.FlapStrength
 }
 
 func (b *Bird) Reset() {
@@ -31,11 +40,11 @@ func (b *Bird) Reset() {
 }
 
 func (b *Bird) Flap() {
-	b.VY = FlapStrength
+	b.VY = b.flapStrength
 }
 
 func (b *Bird) Update() {
-	b.VY += Gravity
+	b.VY += b.gravity
 	b.Y += b.VY
 }
 

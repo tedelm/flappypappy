@@ -7,10 +7,10 @@
   <meta name="description" content="Fly a pint through keg stacks">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="Flappy Beer">
+  <meta name="apple-mobile-web-app-title" content="Flappy Pappy">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <title>Flappy Beer</title>
+  <title>Flappy Pappy</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body {
@@ -45,9 +45,17 @@
 
     const go = new Go();
     WebAssembly.instantiateStreaming(fetch("./flappy.wasm"), go.importObject)
-      .then((result) => {
-        document.getElementById("loading").style.display = "none";
-        go.run(result.instance);
+      .then(async (result) => {
+        try {
+          document.getElementById("loading").style.display = "none";
+          const run = go.run(result.instance);
+          if (run && typeof run.then === "function") {
+            await run;
+          }
+        } catch (err) {
+          document.getElementById("loading").style.display = "block";
+          document.getElementById("loading").textContent = "Game crashed: " + err;
+        }
       })
       .catch((err) => {
         document.getElementById("loading").textContent = "Failed to load game: " + err;

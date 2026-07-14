@@ -6,14 +6,20 @@ const (
 	ScreenW = 400
 	ScreenH = 600
 
+	// Easy-tier defaults; Hard/Insane values live in difficulty.go
 	Gravity       = 0.5
-	FlapStrength  = -6.0
+	FlapStrength  = -6.8
 	PipeSpeed     = 3.0
 	PipeGap       = 150
 	PipeWidth     = 60
 	SpawnInterval = 120
 	GroundHeight  = 80
-	KegSegmentH   = 32
+
+	MaxLives            = 3
+	LifeInvincibleTicks = 90
+	LifeGlassW          = 24
+	LifeGlassGap        = 6
+	LifeHUDMargin       = 10
 
 	BirdStartX = 80
 	BirdWidth  = 28
@@ -28,8 +34,7 @@ var (
 	ColorKegEdge   = color.RGBA{80, 50, 20, 255}
 	ColorGlass     = color.RGBA{200, 200, 210, 255}
 	ColorGlassEdge = color.RGBA{140, 140, 150, 255}
-	ColorBeer      = color.RGBA{218, 165, 32, 255}
-	ColorFoam      = color.RGBA{255, 250, 240, 255}
-	ColorBubble    = color.RGBA{255, 230, 150, 255}
-	ColorFoamLight = color.RGBA{255, 255, 255, 200}
+	ColorBeer   = color.RGBA{218, 165, 32, 255}
+	ColorFoam   = color.RGBA{255, 250, 240, 255}
+	ColorBubble = color.RGBA{255, 230, 150, 255}
 )
