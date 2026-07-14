@@ -1,0 +1,19 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/bin/
+/dist/
+
+# Test
+*.test
+
+# Go
+go.work
+go.work.sum
+
+# IDE
+.idea/
+.vscode/
