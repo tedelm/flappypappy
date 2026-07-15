@@ -21,3 +21,6 @@ go.work.sum
 # Web build output
 docs/*
 !docs/.gitkeep
+
+# Compressed MP3 backups
+*.orig.mp3

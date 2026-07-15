@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"image/color"
+	"log"
 	"math"
 	"math/rand"
 	"unicode"
@@ -15,6 +16,7 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/vector"
 	"golang.org/x/image/font/gofont/goregular"
 
+	"flappy/internal/game/sound"
 	"flappy/internal/game/sprite"
 )
 
@@ -115,16 +117,25 @@ type Game struct {
 	frames           int
 	touchIDs         []ebiten.TouchID
 	nameInputOpen    bool
+	music            *sound.Manager
+	musicMenu        bool
 }
 
 func New() *Game {
-	return &Game{
+	g := &Game{
 		state:      StateReady,
 		difficulty: DifficultyEasy,
 		bird:       NewBird(),
 		pipes:      NewPipeManager(),
 		highScores: NewHighScores(),
 	}
+	music, err := sound.NewManager()
+	if err != nil {
+		log.Printf("music disabled: %v", err)
+	} else {
+		g.music = music
+	}
+	return g
 }
 
 func (g *Game) displayScore() int {
@@ -395,7 +406,20 @@ func (g *Game) Update() error {
 		}
 	}
 
+	g.syncMusicForState()
 	return nil
+}
+
+func (g *Game) syncMusicForState() {
+	if g.music == nil {
+		return
+	}
+	menu := g.state == StateReady || g.state == StateEnterName || g.state == StateHighScores
+	if menu == g.musicMenu {
+		return
+	}
+	g.music.SetMode(menu)
+	g.musicMenu = menu
 }
 
 func (g *Game) hitBounds(bx, by, bw, bh float64) bool {
