@@ -21,7 +21,13 @@ fi
 
 cp "$WEB/index.html" "$DOCS/"
 cp "$WEB/manifest.webmanifest" "$DOCS/"
-cp "$WEB/sw.js" "$DOCS/"
+
+BUILD_ID="$(date -u +%Y%m%d%H%M%S)"
+if git -C "$ROOT" rev-parse --short HEAD >/dev/null 2>&1; then
+  BUILD_ID="$(git -C "$ROOT" rev-parse --short HEAD)"
+fi
+sed "s/__BUILD_ID__/$BUILD_ID/g" "$WEB/sw.js" > "$DOCS/sw.js"
+
 cp -r "$WEB/icons" "$DOCS/"
 
-echo "Web build complete: $DOCS"
+echo "Web build complete: $DOCS (cache: flappy-beer-$BUILD_ID)"

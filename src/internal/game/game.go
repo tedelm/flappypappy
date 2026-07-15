@@ -16,6 +16,7 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/vector"
 	"golang.org/x/image/font/gofont/goregular"
 
+	"flappy/internal/game/font"
 	"flappy/internal/game/sound"
 	"flappy/internal/game/sprite"
 )
@@ -25,20 +26,24 @@ var subtitleFace *text.GoTextFace
 var labelFace *text.GoTextFace
 
 func init() {
-	source, err := text.NewGoTextFaceSource(bytes.NewReader(goregular.TTF))
+	titleSource, err := font.TitleSource()
+	if err != nil {
+		panic(err)
+	}
+	uiSource, err := text.NewGoTextFaceSource(bytes.NewReader(goregular.TTF))
 	if err != nil {
 		panic(err)
 	}
 	titleFace = &text.GoTextFace{
-		Source: source,
+		Source: titleSource,
 		Size:   48,
 	}
 	subtitleFace = &text.GoTextFace{
-		Source: source,
+		Source: uiSource,
 		Size:   12,
 	}
 	labelFace = &text.GoTextFace{
-		Source: source,
+		Source: uiSource,
 		Size:   18,
 	}
 }
@@ -67,6 +72,7 @@ const (
 	highScoresLinkY     = ScreenH/2 + 170
 	highScoresLinkPadX  = 12
 	highScoresLinkPadY  = 8
+	loadTimeoutFrames   = 600
 )
 
 func difficultyLabelX(d Difficulty) float64 {
@@ -95,12 +101,18 @@ func pointInRect(px, py, x, y, w, h float64) bool {
 type State int
 
 const (
-	StateReady State = iota
+	StateLoading State = iota
+	StateReady
 	StatePlaying
 	StateContinue
 	StateEnterName
 	StateHighScores
 )
+
+type loadResult struct {
+	manager *sound.Manager
+	err     error
+}
 
 type Game struct {
 	state            State
@@ -119,23 +131,22 @@ type Game struct {
 	nameInputOpen    bool
 	music            *sound.Manager
 	musicMenu        bool
+	loadStarted           bool
+	loadTextSet           bool
+	loadFrames            int
+	loadDone              chan loadResult
+	loadingScreenHidden   bool
 }
 
 func New() *Game {
-	g := &Game{
-		state:      StateReady,
+	return &Game{
+		state:      StateLoading,
 		difficulty: DifficultyEasy,
 		bird:       NewBird(),
 		pipes:      NewPipeManager(),
 		highScores: NewHighScores(),
+		loadDone:   make(chan loadResult, 1),
 	}
-	music, err := sound.NewManager()
-	if err != nil {
-		log.Printf("music disabled: %v", err)
-	} else {
-		g.music = music
-	}
-	return g
 }
 
 func (g *Game) displayScore() int {
@@ -338,10 +349,42 @@ func (g *Game) updateNameInput() {
 	}
 }
 
+func (g *Game) updateLoading() {
+	g.loadFrames++
+	if !g.loadTextSet {
+		SetLoadingText("Loading audio...")
+		g.loadTextSet = true
+	}
+	if !g.loadStarted {
+		g.loadStarted = true
+		go func() {
+			manager, err := sound.NewManager()
+			g.loadDone <- loadResult{manager: manager, err: err}
+		}()
+	}
+	select {
+	case res := <-g.loadDone:
+		if res.err != nil {
+			log.Printf("music disabled: %v", res.err)
+		} else {
+			g.music = res.manager
+		}
+		g.state = StateReady
+	default:
+		if g.loadFrames >= loadTimeoutFrames {
+			log.Printf("audio load timeout after %d frames; starting without music", g.loadFrames)
+			g.state = StateReady
+		}
+	}
+}
+
 func (g *Game) Update() error {
 	g.frames++
 
 	switch g.state {
+	case StateLoading:
+		g.updateLoading()
+
 	case StateReady:
 		g.bird.X = difficultyLabelX(g.difficulty)
 		g.bird.Y = difficultyLabelY - difficultyGlassLift + sinBob(g.frames)*4
@@ -440,10 +483,16 @@ func sinBob(frame int) float64 {
 func (g *Game) Draw(screen *ebiten.Image) {
 	drawPubBackground(screen, g.bgScrollX, g.decorSeed)
 
-	g.pipes.Draw(screen)
-	drawPubForeground(screen)
+	if g.state != StateLoading {
+		g.pipes.Draw(screen)
+		drawPubForeground(screen)
+	}
 
 	switch g.state {
+	case StateLoading:
+		drawTitle(screen, "Pouring beer...", ScreenW/2, ScreenH/2-20)
+		drawLabel(screen, "Loading audio...", ScreenW/2, ScreenH/2+20, ColorText)
+
 	case StateReady:
 		drawTitle(screen, "Flappy Pappy", ScreenW/2, 140)
 		drawSubtitle(screen, "powered by PappaPuben", ScreenW/2, ScreenH/2-100)
@@ -452,6 +501,10 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		drawLabel(screen, "Tap the beer to Start", ScreenW/2, ScreenH/2+90, ColorText)
 		drawLabel(screen, "Tap a level to choose", ScreenW/2, ScreenH/2+110, ColorText)
 		drawHighScoresLink(screen)
+		if !g.loadingScreenHidden {
+			HideLoadingScreen()
+			g.loadingScreenHidden = true
+		}
 
 	case StateHighScores:
 		drawHighScoresScreen(screen, g.highScores)

@@ -28,6 +28,15 @@ Music is embedded as MP3 and played through Ebitengine's audio API.
 
 Extracted from `beer_crash.mp3` via [`cut-sound.py`](../../../../misc/cut-sound.py). `Manager.PlayLifeLost()` rewinds and plays the one-shot clip; music keeps playing underneath.
 
+## Loading
+
+All embedded MP3s are decoded to PCM in `sound.NewManager()`, which runs asynchronously while the game is in `StateLoading`. The menu (`StateReady`) is not shown until loading completes.
+
+- **Desktop:** in-game loading screen ("Pouring beer..." / "Loading audio...")
+- **Web:** HTML `#loading` overlay stays visible through WASM startup and audio decode; Go calls `HideLoadingScreen()` when entering `StateReady`
+
+Bridge: [`loading_js.go`](../loading_js.go) / [`loading_stub.go`](../loading_stub.go) (desktop no-ops).
+
 ### Loop glitch fix
 
 #### Symptom

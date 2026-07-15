@@ -31,7 +31,20 @@ Copy-Item $wasmExec (Join-Path $Docs "wasm_exec.js")
 
 Copy-Item (Join-Path $Web "index.html") $Docs
 Copy-Item (Join-Path $Web "manifest.webmanifest") $Docs
-Copy-Item (Join-Path $Web "sw.js") $Docs
+
+$BuildId = (Get-Date).ToUniversalTime().ToString("yyyyMMddHHmmss")
+Push-Location $Root
+try {
+    $gitHash = & git rev-parse --short HEAD 2>$null
+    if ($LASTEXITCODE -eq 0 -and $gitHash) {
+        $BuildId = $gitHash
+    }
+} finally {
+    Pop-Location
+}
+$swTemplate = Get-Content (Join-Path $Web "sw.js") -Raw
+$swTemplate.Replace("__BUILD_ID__", $BuildId) | Set-Content (Join-Path $Docs "sw.js") -NoNewline
+
 Copy-Item (Join-Path $Web "icons") (Join-Path $Docs "icons") -Recurse
 
-Write-Host "Web build complete: $Docs"
+Write-Host "Web build complete: $Docs (cache: flappy-beer-$BuildId)"

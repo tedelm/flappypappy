@@ -24,12 +24,19 @@
       touch-action: none;
     }
     #loading {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #1a1a2e;
       color: #fff;
       font-family: system-ui, sans-serif;
       font-size: 1.2rem;
       text-align: center;
     }
-    canvas { display: block; touch-action: none; }
+    canvas { display: block; touch-action: none; visibility: hidden; }
     #nameInput {
       display: none;
       position: fixed;
@@ -62,6 +69,7 @@
 
     let nameInputVisible = false;
     let nameInputBounds = { x: 0, y: 0, w: 0, h: 0 };
+    let gameReady = false;
 
     function getCanvas() {
       return document.querySelector("canvas");
@@ -162,6 +170,30 @@
       });
     };
 
+    window.flappyHideLoading = function() {
+      gameReady = true;
+      requestAnimationFrame(() => {
+        const loading = document.getElementById("loading");
+        if (loading) loading.style.display = "none";
+        const canvas = getCanvas();
+        if (canvas) canvas.style.visibility = "visible";
+      });
+    };
+
+    window.flappySetLoadingText = function(text) {
+      document.getElementById("loading").textContent = text;
+    };
+
+    function keepCanvasHidden() {
+      if (gameReady) return;
+      const canvas = getCanvas();
+      if (canvas) canvas.style.visibility = "hidden";
+    }
+
+    const canvasObserver = new MutationObserver(keepCanvasHidden);
+    canvasObserver.observe(document.body, { childList: true, subtree: true });
+    keepCanvasHidden();
+
     document.getElementById("nameInput").addEventListener("input", function(e) {
       const maxLen = parseInt(e.target.dataset.maxLen || "8", 10);
       const v = sanitizeName(e.target.value, maxLen);
@@ -186,34 +218,62 @@
   </script>
   <script src="wasm_exec.js"></script>
   <script>
-    if (!WebAssembly.instantiateStreaming) {
-      WebAssembly.instantiateStreaming = async (resp, importObject) => {
-        const source = await (await resp).arrayBuffer();
-        return await WebAssembly.instantiate(source, importObject);
-      };
+    const go = new Go();
+
+    async function startGame() {
+      try {
+        const resp = await fetch("./flappy.wasm");
+        if (!resp.ok) {
+          throw new Error("HTTP " + resp.status);
+        }
+        const bytes = await resp.arrayBuffer();
+        const result = await WebAssembly.instantiate(bytes, go.importObject);
+        const run = go.run(result.instance);
+        if (run && typeof run.then === "function") {
+          await run;
+        }
+      } catch (err) {
+        const loading = document.getElementById("loading");
+        if (loading) {
+          loading.style.display = "flex";
+          loading.textContent = "Game crashed: " + err;
+        }
+        throw err;
+      }
     }
 
-    const go = new Go();
-    WebAssembly.instantiateStreaming(fetch("./flappy.wasm"), go.importObject)
-      .then(async (result) => {
-        try {
-          document.getElementById("loading").style.display = "none";
-          const run = go.run(result.instance);
-          if (run && typeof run.then === "function") {
-            await run;
-          }
-        } catch (err) {
-          document.getElementById("loading").style.display = "block";
-          document.getElementById("loading").textContent = "Game crashed: " + err;
-        }
-      })
-      .catch((err) => {
-        document.getElementById("loading").textContent = "Failed to load game: " + err;
-      });
+    startGame().catch((err) => {
+      const loading = document.getElementById("loading");
+      if (loading && loading.style.display !== "none") {
+        loading.style.display = "flex";
+        loading.textContent = "Failed to load game: " + err;
+      }
+    });
 
     if ("serviceWorker" in navigator) {
+      async function initServiceWorker() {
+        const hadController = !!navigator.serviceWorker.controller;
+        const reg = await navigator.serviceWorker.register("./sw.js", {
+          updateViaCache: "none",
+        });
+
+        const checkForUpdates = () => reg.update().catch(() => {});
+        checkForUpdates();
+        document.addEventListener("visibilitychange", () => {
+          if (document.visibilityState === "visible") {
+            checkForUpdates();
+          }
+        });
+        setInterval(checkForUpdates, 60 * 60 * 1000);
+
+        navigator.serviceWorker.addEventListener("controllerchange", () => {
+          if (!hadController) return;
+          window.location.reload();
+        });
+      }
+
       window.addEventListener("load", () => {
-        navigator.serviceWorker.register("./sw.js").catch(() => {});
+        initServiceWorker().catch(() => {});
       });
     }
   </script>
