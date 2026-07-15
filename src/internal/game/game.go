@@ -114,6 +114,7 @@ type Game struct {
 	pipes            *PipeManager
 	frames           int
 	touchIDs         []ebiten.TouchID
+	nameInputOpen    bool
 }
 
 func New() *Game {
@@ -132,6 +133,7 @@ func (g *Game) displayScore() int {
 
 func (g *Game) reset() {
 	HideNameInput()
+	g.nameInputOpen = false
 	g.state = StateReady
 	g.rawScore = 0
 	g.frames = 0
@@ -166,8 +168,7 @@ func (g *Game) loseLife() {
 	} else {
 		g.playerName = ""
 		g.state = StateEnterName
-		x, y, w, h := nameFieldBounds()
-		ShowNameInput(g.playerName, x, y, w, h, MaxPlayerNameLen)
+		g.nameInputOpen = true
 	}
 }
 
@@ -371,6 +372,11 @@ func (g *Game) Update() error {
 		}
 
 	case StateEnterName:
+		if g.nameInputOpen {
+			x, y, w, h := nameFieldBounds()
+			ShowNameInput(g.playerName, x, y, w, h, MaxPlayerNameLen)
+			g.nameInputOpen = false
+		}
 		SyncNameInput(&g.playerName)
 		g.updateNameInput()
 		if px, py, ok := g.readyPointerJustPressed(); ok {

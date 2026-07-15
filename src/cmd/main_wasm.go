@@ -1,4 +1,4 @@
-//go:build !js || !wasm
+//go:build js && wasm
 
 package main
 
@@ -11,9 +11,7 @@ import (
 )
 
 func main() {
-	ebiten.SetWindowSize(game.ScreenW, game.ScreenH)
-	ebiten.SetWindowTitle("Flappy Pappy")
-	ebiten.SetWindowResizingMode(ebiten.WindowResizingModeDisabled)
+	ebiten.SetRunnableOnUnfocused(true)
 
 	g := game.New()
 	if err := ebiten.RunGame(g); err != nil {

@@ -4,19 +4,30 @@ package game
 
 import "syscall/js"
 
+func callJS(name string, args ...any) {
+	fn := js.Global().Get(name)
+	if fn.Type() != js.TypeFunction {
+		return
+	}
+	fn.Invoke(args...)
+}
+
 func ShowNameInput(value string, x, y, w, h float64, maxLen int) {
-	js.Global().Call("flappyShowNameInput", x, y, w, h, value, maxLen)
+	callJS("flappyShowNameInput", x, y, w, h, value, maxLen)
 }
 
 func HideNameInput() {
-	js.Global().Call("flappyHideNameInput")
+	callJS("flappyHideNameInput")
 }
 
 func SyncNameInput(dst *string) {
-	v := js.Global().Call("flappySyncNameInput").String()
-	*dst = v
+	fn := js.Global().Get("flappySyncNameInput")
+	if fn.Type() != js.TypeFunction {
+		return
+	}
+	*dst = fn.Invoke().String()
 }
 
 func FocusNameInput() {
-	js.Global().Call("flappyFocusNameInput")
+	callJS("flappyFocusNameInput")
 }

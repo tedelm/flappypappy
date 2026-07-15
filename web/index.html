@@ -94,31 +94,52 @@
       nameInputBounds = { x, y, w, h };
     }
 
-    window.flappyShowNameInput = function(x, y, w, h, value, maxLen) {
+    function focusCanvas() {
+      const canvas = getCanvas();
+      if (!canvas) return;
+      try {
+        canvas.focus({ preventScroll: true });
+      } catch (_) {
+        canvas.focus();
+      }
+    }
+
+    function focusNameInput() {
       const input = document.getElementById("nameInput");
       if (!input) return;
-      input.maxLength = maxLen;
-      input.dataset.maxLen = String(maxLen);
-      input.value = sanitizeName(value, maxLen);
-      positionNameInput(x, y, w, h);
-      input.style.display = "block";
-      nameInputVisible = true;
       try {
         input.focus({ preventScroll: true });
       } catch (_) {
         input.focus();
       }
+    }
+
+    window.flappyShowNameInput = function(x, y, w, h, value, maxLen) {
+      requestAnimationFrame(() => {
+        const input = document.getElementById("nameInput");
+        if (!input) return;
+        input.maxLength = maxLen;
+        input.dataset.maxLen = String(maxLen);
+        input.value = sanitizeName(value, maxLen);
+        positionNameInput(x, y, w, h);
+        input.style.display = "block";
+        nameInputVisible = true;
+      });
     };
 
     window.flappyHideNameInput = function() {
-      const input = document.getElementById("nameInput");
-      if (!input) return;
-      input.blur();
-      input.style.display = "none";
-      nameInputVisible = false;
+      requestAnimationFrame(() => {
+        const input = document.getElementById("nameInput");
+        if (!input) return;
+        input.blur();
+        input.style.display = "none";
+        nameInputVisible = false;
+        focusCanvas();
+      });
     };
 
     window.flappySyncNameInput = function() {
+      if (!nameInputVisible) return "";
       const input = document.getElementById("nameInput");
       if (!input) return "";
       const maxLen = parseInt(input.dataset.maxLen || "8", 10);
@@ -128,19 +149,17 @@
     };
 
     window.flappyFocusNameInput = function() {
-      const input = document.getElementById("nameInput");
-      if (!input) return;
-      positionNameInput(
-        nameInputBounds.x,
-        nameInputBounds.y,
-        nameInputBounds.w,
-        nameInputBounds.h
-      );
-      try {
-        input.focus({ preventScroll: true });
-      } catch (_) {
-        input.focus();
-      }
+      requestAnimationFrame(() => {
+        const input = document.getElementById("nameInput");
+        if (!input) return;
+        positionNameInput(
+          nameInputBounds.x,
+          nameInputBounds.y,
+          nameInputBounds.w,
+          nameInputBounds.h
+        );
+        focusNameInput();
+      });
     };
 
     document.getElementById("nameInput").addEventListener("input", function(e) {
@@ -161,6 +180,9 @@
 
     window.addEventListener("resize", repositionNameInputIfVisible);
     window.addEventListener("orientationchange", repositionNameInputIfVisible);
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener("resize", repositionNameInputIfVisible);
+    }
   </script>
   <script src="wasm_exec.js"></script>
   <script>
