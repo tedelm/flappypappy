@@ -173,6 +173,9 @@ func (g *Game) startGame() {
 }
 
 func (g *Game) loseLife() {
+	if g.music != nil {
+		g.music.PlayLifeLost()
+	}
 	g.lives--
 	if g.lives > 0 {
 		g.state = StateContinue

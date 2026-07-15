@@ -10,19 +10,21 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/audio/mp3"
 )
 
-//go:embed game_music.mp3 game_music_menu.mp3
+//go:embed game_music.mp3 game_music_menu.mp3 beer_glass_hit.mp3
 var assets embed.FS
 
 const (
 	sampleRate  = 44100
 	musicVolume = 0.45
+	sfxVolume   = 0.8
 )
 
 type Manager struct {
-	ctx        *audio.Context
-	menuPlayer *audio.Player
-	gamePlayer *audio.Player
-	menuMode   bool
+	ctx            *audio.Context
+	menuPlayer     *audio.Player
+	gamePlayer     *audio.Player
+	lifeLostPlayer *audio.Player
+	menuMode       bool
 }
 
 func NewManager() (*Manager, error) {
@@ -41,14 +43,23 @@ func NewManager() (*Manager, error) {
 	}
 	gamePlayer.SetVolume(musicVolume)
 
+	lifeLostPlayer, err := newOneShotPlayer(ctx, "beer_glass_hit.mp3")
+	if err != nil {
+		menuPlayer.Close()
+		gamePlayer.Close()
+		return nil, fmt.Errorf("life lost sfx: %w", err)
+	}
+	lifeLostPlayer.SetVolume(sfxVolume)
+
 	return &Manager{
-		ctx:        ctx,
-		menuPlayer: menuPlayer,
-		gamePlayer: gamePlayer,
+		ctx:            ctx,
+		menuPlayer:     menuPlayer,
+		gamePlayer:     gamePlayer,
+		lifeLostPlayer: lifeLostPlayer,
 	}, nil
 }
 
-func newLoopPlayer(ctx *audio.Context, name string) (*audio.Player, error) {
+func decodePCM(name string) ([]byte, error) {
 	data, err := assets.ReadFile(name)
 	if err != nil {
 		return nil, err
@@ -59,7 +70,11 @@ func newLoopPlayer(ctx *audio.Context, name string) (*audio.Player, error) {
 		return nil, err
 	}
 
-	pcm, err := io.ReadAll(stream)
+	return io.ReadAll(stream)
+}
+
+func newLoopPlayer(ctx *audio.Context, name string) (*audio.Player, error) {
+	pcm, err := decodePCM(name)
 	if err != nil {
 		return nil, err
 	}
@@ -69,11 +84,23 @@ func newLoopPlayer(ctx *audio.Context, name string) (*audio.Player, error) {
 	blend := int64(sampleRate) * int64(bytesPerSample) / 10
 	loopLen := int64(len(pcm)) - blend
 	loop := audio.NewInfiniteLoop(bytes.NewReader(pcm), loopLen)
-	player, err := ctx.NewPlayer(loop)
+	return ctx.NewPlayer(loop)
+}
+
+func newOneShotPlayer(ctx *audio.Context, name string) (*audio.Player, error) {
+	pcm, err := decodePCM(name)
 	if err != nil {
 		return nil, err
 	}
-	return player, nil
+	return ctx.NewPlayer(bytes.NewReader(pcm))
+}
+
+func (m *Manager) PlayLifeLost() {
+	if m == nil || m.lifeLostPlayer == nil {
+		return
+	}
+	_ = m.lifeLostPlayer.Rewind()
+	m.lifeLostPlayer.Play()
 }
 
 func (m *Manager) SetMode(menu bool) {
@@ -106,6 +133,11 @@ func (m *Manager) Close() error {
 	}
 	if m.gamePlayer != nil {
 		if e := m.gamePlayer.Close(); e != nil && err == nil {
+			err = e
+		}
+	}
+	if m.lifeLostPlayer != nil {
+		if e := m.lifeLostPlayer.Close(); e != nil && err == nil {
 			err = e
 		}
 	}
