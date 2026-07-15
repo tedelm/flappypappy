@@ -131,6 +131,7 @@ func (g *Game) displayScore() int {
 }
 
 func (g *Game) reset() {
+	HideNameInput()
 	g.state = StateReady
 	g.rawScore = 0
 	g.frames = 0
@@ -165,6 +166,8 @@ func (g *Game) loseLife() {
 	} else {
 		g.playerName = ""
 		g.state = StateEnterName
+		x, y, w, h := nameFieldBounds()
+		ShowNameInput(g.playerName, x, y, w, h, MaxPlayerNameLen)
 	}
 }
 
@@ -176,6 +179,7 @@ func (g *Game) continueGame() {
 }
 
 func (g *Game) submitHighScore() {
+	SyncNameInput(&g.playerName)
 	g.highScores.Add(g.playerName, g.displayScore())
 	g.reset()
 }
@@ -367,7 +371,14 @@ func (g *Game) Update() error {
 		}
 
 	case StateEnterName:
+		SyncNameInput(&g.playerName)
 		g.updateNameInput()
+		if px, py, ok := g.readyPointerJustPressed(); ok {
+			fx, fy, fw, fh := nameFieldBounds()
+			if pointInRect(px, py, fx, fy, fw, fh) {
+				FocusNameInput()
+			}
+		}
 		if g.saveHighScoreInput() {
 			g.submitHighScore()
 		}

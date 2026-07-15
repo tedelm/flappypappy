@@ -30,10 +30,138 @@
       text-align: center;
     }
     canvas { display: block; touch-action: none; }
+    #nameInput {
+      display: none;
+      position: fixed;
+      z-index: 10;
+      margin: 0;
+      padding: 0 8px;
+      border: 2px solid rgb(140, 140, 150);
+      border-radius: 0;
+      background: rgb(200, 200, 210);
+      color: rgb(245, 245, 240);
+      font-family: system-ui, sans-serif;
+      font-size: 16px;
+      font-weight: 600;
+      text-align: center;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      outline: none;
+      touch-action: manipulation;
+    }
   </style>
 </head>
 <body>
   <p id="loading">Pouring beer...</p>
+  <input id="nameInput" type="text" maxlength="8" autocomplete="off"
+         autocapitalize="characters" enterkeyhint="done" inputmode="text"
+         spellcheck="false" aria-label="Player name" />
+  <script>
+    const GAME_W = 400;
+    const GAME_H = 600;
+
+    let nameInputVisible = false;
+    let nameInputBounds = { x: 0, y: 0, w: 0, h: 0 };
+
+    function getCanvas() {
+      return document.querySelector("canvas");
+    }
+
+    function sanitizeName(value, maxLen) {
+      let out = "";
+      const upper = String(value).toUpperCase();
+      for (let i = 0; i < upper.length; i++) {
+        const ch = upper[i];
+        if ((ch >= "A" && ch <= "Z") || (ch >= "0" && ch <= "9")) {
+          out += ch;
+          if (out.length >= maxLen) break;
+        }
+      }
+      return out;
+    }
+
+    function positionNameInput(x, y, w, h) {
+      const canvas = getCanvas();
+      const input = document.getElementById("nameInput");
+      if (!canvas || !input) return;
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = rect.width / GAME_W;
+      const scaleY = rect.height / GAME_H;
+      input.style.left = (rect.left + x * scaleX) + "px";
+      input.style.top = (rect.top + y * scaleY) + "px";
+      input.style.width = (w * scaleX) + "px";
+      input.style.height = (h * scaleY) + "px";
+      nameInputBounds = { x, y, w, h };
+    }
+
+    window.flappyShowNameInput = function(x, y, w, h, value, maxLen) {
+      const input = document.getElementById("nameInput");
+      if (!input) return;
+      input.maxLength = maxLen;
+      input.dataset.maxLen = String(maxLen);
+      input.value = sanitizeName(value, maxLen);
+      positionNameInput(x, y, w, h);
+      input.style.display = "block";
+      nameInputVisible = true;
+      try {
+        input.focus({ preventScroll: true });
+      } catch (_) {
+        input.focus();
+      }
+    };
+
+    window.flappyHideNameInput = function() {
+      const input = document.getElementById("nameInput");
+      if (!input) return;
+      input.blur();
+      input.style.display = "none";
+      nameInputVisible = false;
+    };
+
+    window.flappySyncNameInput = function() {
+      const input = document.getElementById("nameInput");
+      if (!input) return "";
+      const maxLen = parseInt(input.dataset.maxLen || "8", 10);
+      const v = sanitizeName(input.value, maxLen);
+      if (input.value !== v) input.value = v;
+      return v;
+    };
+
+    window.flappyFocusNameInput = function() {
+      const input = document.getElementById("nameInput");
+      if (!input) return;
+      positionNameInput(
+        nameInputBounds.x,
+        nameInputBounds.y,
+        nameInputBounds.w,
+        nameInputBounds.h
+      );
+      try {
+        input.focus({ preventScroll: true });
+      } catch (_) {
+        input.focus();
+      }
+    };
+
+    document.getElementById("nameInput").addEventListener("input", function(e) {
+      const maxLen = parseInt(e.target.dataset.maxLen || "8", 10);
+      const v = sanitizeName(e.target.value, maxLen);
+      if (e.target.value !== v) e.target.value = v;
+    });
+
+    function repositionNameInputIfVisible() {
+      if (!nameInputVisible) return;
+      positionNameInput(
+        nameInputBounds.x,
+        nameInputBounds.y,
+        nameInputBounds.w,
+        nameInputBounds.h
+      );
+    }
+
+    window.addEventListener("resize", repositionNameInputIfVisible);
+    window.addEventListener("orientationchange", repositionNameInputIfVisible);
+  </script>
   <script src="wasm_exec.js"></script>
   <script>
     if (!WebAssembly.instantiateStreaming) {
