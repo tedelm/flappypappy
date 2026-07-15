@@ -374,12 +374,49 @@ CREATE TABLE IF NOT EXISTS highscores (
       }
     }
 
+    function installDriverRequirePolyfill() {
+      if (window.__flappyDriverRequirePolyfill) return;
+      window.__flappyDriverRequirePolyfill = true;
+      const previousRequire = globalThis.require;
+      globalThis.require = function (name) {
+        if (name === "whatwg-url") {
+          if (typeof globalThis.URL === "undefined") {
+            throw new Error("URL is not available in this browser");
+          }
+          return { URL: globalThis.URL };
+        }
+        if (typeof previousRequire === "function") {
+          return previousRequire(name);
+        }
+        throw new Error("Unsupported require: " + name);
+      };
+    }
+
+    async function loadDatabaseClass() {
+      installDriverRequirePolyfill();
+      const driverCDNs = [
+        "https://esm.sh/@sqlitecloud/drivers@1.0.880",
+        "https://cdn.jsdelivr.net/npm/@sqlitecloud/drivers/+esm",
+      ];
+      let Database;
+      for (const url of driverCDNs) {
+        try {
+          ({ Database } = await import(url));
+          break;
+        } catch (err) {
+          console.warn("score bridge: failed to load driver from", url, err);
+        }
+      }
+      if (!Database) {
+        throw new Error("could not load SQLite Cloud driver");
+      }
+      return Database;
+    }
+
     async function initScoreBridge() {
       if (!window.FLAPPY_SQLITECLOUD_URL) return;
       try {
-        const { Database } = await import(
-          "https://cdn.jsdelivr.net/npm/@sqlitecloud/drivers/+esm"
-        );
+        const Database = await loadDatabaseClass();
         installLiveScoreBridge(Database);
       } catch (err) {
         console.error("score bridge:", err);
