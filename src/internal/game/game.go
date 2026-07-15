@@ -104,6 +104,8 @@ const (
 	StateLoading State = iota
 	StateReady
 	StatePlaying
+	StateBossFight
+	StateLevelComplete
 	StateContinue
 	StateEnterName
 	StateHighScores
@@ -115,27 +117,30 @@ type loadResult struct {
 }
 
 type Game struct {
-	state            State
-	rawScore         int
-	difficulty       Difficulty
-	lives            int
-	invincibleFrames int
-	playerName       string
-	highScores       *HighScores
-	bgScrollX        float64
-	decorSeed        int
-	bird             *Bird
-	pipes            *PipeManager
-	frames           int
-	touchIDs         []ebiten.TouchID
-	nameInputOpen    bool
-	music            *sound.Manager
-	musicMenu        bool
-	loadStarted           bool
-	loadTextSet           bool
-	loadFrames            int
-	loadDone              chan loadResult
-	loadingScreenHidden   bool
+	state               State
+	rawScore            int
+	level               int
+	levelDadsPassed     int
+	difficulty          Difficulty
+	lives               int
+	invincibleFrames    int
+	playerName          string
+	highScores          *HighScores
+	bgScrollX           float64
+	decorSeed           int
+	bird                *Bird
+	pipes               *PipeManager
+	bossFight           *BossFight
+	frames              int
+	touchIDs            []ebiten.TouchID
+	nameInputOpen       bool
+	music               *sound.Manager
+	musicMenu           bool
+	loadStarted         bool
+	loadTextSet         bool
+	loadFrames          int
+	loadDone            chan loadResult
+	loadingScreenHidden bool
 }
 
 func New() *Game {
@@ -144,6 +149,7 @@ func New() *Game {
 		difficulty: DifficultyEasy,
 		bird:       NewBird(),
 		pipes:      NewPipeManager(),
+		bossFight:  NewBossFight(),
 		highScores: NewHighScores(InitScoreStore()),
 		loadDone:   make(chan loadResult, 1),
 	}
@@ -158,6 +164,8 @@ func (g *Game) reset() {
 	g.nameInputOpen = false
 	g.state = StateReady
 	g.rawScore = 0
+	g.level = 0
+	g.levelDadsPassed = 0
 	g.frames = 0
 	g.lives = 0
 	g.invincibleFrames = 0
@@ -174,6 +182,9 @@ func (g *Game) startGame() {
 	g.bird.Reset()
 	g.pipes.ApplyConfig(cfg)
 	g.pipes.Reset()
+	g.level = 1
+	g.levelDadsPassed = 0
+	g.rawScore = 0
 	g.lives = MaxLives
 	g.invincibleFrames = 0
 	g.playerName = ""
@@ -181,6 +192,30 @@ func (g *Game) startGame() {
 	g.decorSeed = rand.Int()
 	g.state = StatePlaying
 	g.flap()
+}
+
+func (g *Game) enterBossFight() {
+	g.pipes.Reset()
+	g.bossFight.Reset()
+	g.state = StateBossFight
+}
+
+func (g *Game) advanceToNextLevel() {
+	g.level++
+	g.levelDadsPassed = 0
+	g.bird.Reset()
+	g.pipes.Reset()
+	g.state = StatePlaying
+	g.flap()
+}
+
+func (g *Game) bossGameOver() {
+	if g.music != nil {
+		g.music.PlayGameOver()
+	}
+	g.playerName = ""
+	g.state = StateEnterName
+	g.nameInputOpen = true
 }
 
 func (g *Game) flap() {
@@ -308,6 +343,10 @@ func (g *Game) continueInput() bool {
 	return pointInRect(px, py, x, y, w, h)
 }
 
+func (g *Game) levelCompleteInput() bool {
+	return g.continueInput()
+}
+
 func (g *Game) saveHighScoreInput() bool {
 	if inpututil.IsKeyJustPressed(ebiten.KeyEnter) {
 		return true
@@ -423,10 +462,14 @@ func (g *Game) Update() error {
 		g.bgScrollX += g.pipes.Speed() * BgParallaxFactor
 		if delta := g.pipes.CheckScore(g.bird.X); delta > 0 {
 			g.rawScore += delta
+			g.levelDadsPassed += delta
 			if g.music != nil {
 				for i := 0; i < delta; i++ {
 					g.music.PlayPassDad()
 				}
+			}
+			if g.levelDadsPassed >= DadsRequiredForLevel(g.level) {
+				g.enterBossFight()
 			}
 		}
 
@@ -441,6 +484,26 @@ func (g *Game) Update() error {
 
 		if g.flapInput() {
 			g.flap()
+		}
+
+	case StateBossFight:
+		won, lost := g.bossFight.Update()
+		if won {
+			g.state = StateLevelComplete
+		} else if lost {
+			g.bossGameOver()
+		} else if g.flapInput() {
+			if g.bossFight.CanThrow() {
+				g.bossFight.Throw()
+				if g.music != nil {
+					g.music.PlayJump()
+				}
+			}
+		}
+
+	case StateLevelComplete:
+		if g.levelCompleteInput() {
+			g.advanceToNextLevel()
 		}
 
 	case StateContinue:
@@ -503,11 +566,16 @@ func sinBob(frame int) float64 {
 func (g *Game) Draw(screen *ebiten.Image) {
 	drawPubBackground(screen, g.bgScrollX, g.decorSeed)
 
+	showPipes := g.state == StatePlaying || g.state == StateContinue
 	if g.state != StateLoading {
-		g.pipes.DrawLamps(screen)
+		if showPipes {
+			g.pipes.DrawLamps(screen)
+		}
 		drawWoodenFloor(screen)
 		drawPubStools(screen, g.bgScrollX, g.decorSeed)
-		g.pipes.DrawDads(screen)
+		if showPipes {
+			g.pipes.DrawDads(screen)
+		}
 	}
 
 	switch g.state {
@@ -531,6 +599,17 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	case StateHighScores:
 		drawHighScoresScreen(screen, g.highScores)
 
+	case StateBossFight:
+		drawBossPlayer(screen)
+		g.bossFight.Draw(screen)
+		drawGameplayHUD(screen, g)
+		drawBossHUD(screen, g.bossFight)
+
+	case StateLevelComplete:
+		g.bird.Draw(screen)
+		drawGameplayHUD(screen, g)
+		drawLevelCompletePrompt(screen, g)
+
 	default:
 		g.bird.Draw(screen)
 		switch g.state {
@@ -542,11 +621,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	}
 
 	if g.state == StatePlaying || g.state == StateContinue {
-		drawLabel(screen, fmt.Sprintf("%d", g.displayScore()), ScreenW/2, 20, ColorText)
-	}
-
-	if g.state == StatePlaying || g.state == StateContinue {
-		drawLifeHUD(screen, g.lives)
+		drawGameplayHUD(screen, g)
 	}
 }
 
@@ -593,6 +668,15 @@ func drawLabel(screen *ebiten.Image, str string, centerX, y float64, col color.C
 	text.Draw(screen, str, labelFace, op)
 }
 
+func drawLabelLeft(screen *ebiten.Image, str string, leftX, y float64, col color.Color) {
+	op := &text.DrawOptions{}
+	op.PrimaryAlign = text.AlignStart
+	op.SecondaryAlign = text.AlignStart
+	op.GeoM.Translate(leftX, y)
+	op.ColorScale.ScaleWithColor(col)
+	text.Draw(screen, str, labelFace, op)
+}
+
 func drawLifeHUD(screen *ebiten.Image, lives int) {
 	full := sprite.LifeFull()
 	empty := sprite.LifeEmpty()
@@ -622,6 +706,25 @@ func drawPubButton(screen *ebiten.Image, label string, x, y, w, h float64) {
 	drawLabel(screen, label, x+w/2, y+h/2-9, ColorText)
 }
 
+func drawGameplayHUD(screen *ebiten.Image, g *Game) {
+	drawLabel(screen, fmt.Sprintf("%d", g.displayScore()), ScreenW/2, 20, ColorText)
+	drawLabelLeft(screen, fmt.Sprintf("Level %d", g.level), LifeHUDMargin, 20, ColorText)
+	target := DadsRequiredForLevel(g.level)
+	drawLabel(screen, fmt.Sprintf("%d/%d", g.levelDadsPassed, target), ScreenW/2, 44, ColorTextMuted)
+	drawLifeHUD(screen, g.lives)
+}
+
+func drawBossHUD(screen *ebiten.Image, bf *BossFight) {
+	drawLabel(screen, fmt.Sprintf("Hits: %d/%d", bf.hits, BossHitsRequired), ScreenW/2, 68, ColorText)
+	drawLabel(screen, fmt.Sprintf("Throws: %d/%d", bf.throwsUsed, BossThrowsAllowed), ScreenW/2, 92, ColorTextMuted)
+}
+
+func drawLevelCompletePrompt(screen *ebiten.Image, g *Game) {
+	drawLabel(screen, fmt.Sprintf("Level %d complete!", g.level), ScreenW/2, continueBtnY-28, ColorText)
+	x, y, w, h := continueButtonBounds()
+	drawPubButton(screen, "CONTINUE", x, y, w, h)
+}
+
 func drawContinuePrompt(screen *ebiten.Image) {
 	drawLabel(screen, "Ah, no! Your beer is a memory now!", ScreenW/2, continueBtnY-28, ColorText)
 	x, y, w, h := continueButtonBounds()
@@ -635,6 +738,7 @@ func drawHighScoresLink(screen *ebiten.Image) {
 func drawEnterNameScreen(screen *ebiten.Image, g *Game) {
 	drawTitle(screen, "GAME OVER", ScreenW/2, enterNameTitleY)
 	drawTitle(screen, fmt.Sprintf("Score: %d", g.displayScore()), ScreenW/2, enterNameScoreY)
+	drawLabel(screen, fmt.Sprintf("Level reached: %d", g.level), ScreenW/2, enterNameScoreY+40, ColorTextMuted)
 	drawLabel(screen, "Enter your name", ScreenW/2, enterNameLabelY, ColorText)
 
 	x, y, w, h := nameFieldBounds()
