@@ -180,7 +180,14 @@ func (g *Game) startGame() {
 	g.bgScrollX = 0
 	g.decorSeed = rand.Int()
 	g.state = StatePlaying
+	g.flap()
+}
+
+func (g *Game) flap() {
 	g.bird.Flap()
+	if g.music != nil {
+		g.music.PlayJump()
+	}
 }
 
 func (g *Game) loseLife() {
@@ -199,7 +206,7 @@ func (g *Game) loseLife() {
 
 func (g *Game) continueGame() {
 	g.bird.Reset()
-	g.bird.Flap()
+	g.flap()
 	g.invincibleFrames = LifeInvincibleTicks
 	g.state = StatePlaying
 }
@@ -420,7 +427,7 @@ func (g *Game) Update() error {
 		}
 
 		if g.flapInput() {
-			g.bird.Flap()
+			g.flap()
 		}
 
 	case StateContinue:

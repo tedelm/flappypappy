@@ -11,7 +11,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SOUND_DIR = ROOT / "src" / "internal" / "game" / "sound"
-DEFAULT_INPUT = "beer_crash.mp3"
+DEFAULT_INPUT = "input_file.mp3"
 DEFAULT_BITRATE = "128k"
 DEFAULT_SAMPLE_RATE = "44100"
 

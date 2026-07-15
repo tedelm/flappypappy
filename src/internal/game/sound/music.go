@@ -10,7 +10,7 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/audio/mp3"
 )
 
-//go:embed game_music.mp3 game_music_menu.mp3 beer_glass_hit.mp3
+//go:embed game_music.mp3 game_music_menu.mp3 beer_glass_hit.mp3 jump.mp3
 var assets embed.FS
 
 const (
@@ -24,6 +24,7 @@ type Manager struct {
 	menuPlayer     *audio.Player
 	gamePlayer     *audio.Player
 	lifeLostPlayer *audio.Player
+	jumpPlayer     *audio.Player
 	menuMode       bool
 }
 
@@ -51,11 +52,21 @@ func NewManager() (*Manager, error) {
 	}
 	lifeLostPlayer.SetVolume(sfxVolume)
 
+	jumpPlayer, err := newOneShotPlayer(ctx, "jump.mp3")
+	if err != nil {
+		menuPlayer.Close()
+		gamePlayer.Close()
+		lifeLostPlayer.Close()
+		return nil, fmt.Errorf("jump sfx: %w", err)
+	}
+	jumpPlayer.SetVolume(sfxVolume)
+
 	return &Manager{
 		ctx:            ctx,
 		menuPlayer:     menuPlayer,
 		gamePlayer:     gamePlayer,
 		lifeLostPlayer: lifeLostPlayer,
+		jumpPlayer:     jumpPlayer,
 	}, nil
 }
 
@@ -93,6 +104,14 @@ func newOneShotPlayer(ctx *audio.Context, name string) (*audio.Player, error) {
 		return nil, err
 	}
 	return ctx.NewPlayer(bytes.NewReader(pcm))
+}
+
+func (m *Manager) PlayJump() {
+	if m == nil || m.jumpPlayer == nil {
+		return
+	}
+	_ = m.jumpPlayer.Rewind()
+	m.jumpPlayer.Play()
 }
 
 func (m *Manager) PlayLifeLost() {
@@ -138,6 +157,11 @@ func (m *Manager) Close() error {
 	}
 	if m.lifeLostPlayer != nil {
 		if e := m.lifeLostPlayer.Close(); e != nil && err == nil {
+			err = e
+		}
+	}
+	if m.jumpPlayer != nil {
+		if e := m.jumpPlayer.Close(); e != nil && err == nil {
 			err = e
 		}
 	}

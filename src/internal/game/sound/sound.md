@@ -25,6 +25,7 @@ Music is embedded as MP3 and played through Ebitengine's audio API.
 | File | Used in |
 |------|---------|
 | `beer_glass_hit.mp3` | Life lost (`loseLife()` — pipe/ground collision) |
+| `jump.mp3` | Flap / jump (`flap()` — tap, space, start, continue) |
 
 Extracted from `beer_crash.mp3` via [`cut-sound.py`](../../../../misc/cut-sound.py). `Manager.PlayLifeLost()` rewinds and plays the one-shot clip; music keeps playing underneath.
 
