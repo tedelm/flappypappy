@@ -21,15 +21,6 @@ fi
 
 cp "$WEB/index.html" "$DOCS/"
 cp "$WEB/manifest.webmanifest" "$DOCS/"
-VENDOR_DIR="$WEB/vendor"
-VENDOR_FILE="$VENDOR_DIR/sqlitecloud-drivers.mjs"
-if [ ! -f "$VENDOR_FILE" ]; then
-  mkdir -p "$VENDOR_DIR"
-  curl -fsSL "https://cdn.jsdelivr.net/npm/@sqlitecloud/drivers/+esm" -o "$VENDOR_FILE"
-fi
-if [ -d "$WEB/vendor" ]; then
-  cp -r "$WEB/vendor" "$DOCS/"
-fi
 if [ -f "$WEB/config.js" ]; then
   cp "$WEB/config.js" "$DOCS/"
 else
