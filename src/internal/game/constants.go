@@ -7,13 +7,17 @@ const (
 	ScreenH = 600
 
 	// Easy-tier defaults; Hard/Insane values live in difficulty.go
-	Gravity       = 0.5
-	FlapStrength  = -6.8
-	PipeSpeed     = 3.0
-	PipeGap       = 150
-	PipeWidth     = 60
-	SpawnInterval = 120
-	GroundHeight  = 80
+	Gravity           = 0.5
+	FlapStrength      = -6.8
+	PipeSpeed         = 3.0
+	PipeGap           = 150
+	PipeWidth         = 60
+	SpawnInterval     = 120
+	GroundHeight      = 115
+	FloorHeight       = 64
+	FloorSurfaceY     = ScreenH - FloorHeight
+	WainscotingTopY   = ScreenH / 2
+	WainscotingHeight = FloorSurfaceY - WainscotingTopY
 
 	MaxLives            = 3
 	LifeInvincibleTicks = 90
@@ -29,14 +33,16 @@ const (
 	DecorChunkMin         = 200
 	DecorChunkJitter      = 120
 	DecorPaintChance      = 45
-	DecorStoolY           = ScreenH - GroundHeight - 55
+	DecorStoolBelowGround = 55
+	DecorTableBelowStool  = 7
+	DecorStoolY           = ScreenH - GroundHeight + DecorStoolBelowGround
 	DecorPaintingY        = 100
-	DecorStoolScale       = 0.135
-	DecorPaintingScale    = 0.25
+	DecorStoolScale       = 0.120
+	DecorPaintingScale    = 0.200
 	DecorTableChunkMin    = 280
 	DecorTableChunkJitter = 160
 	DecorTableChance      = 40
-	DecorTableY           = ScreenH - GroundHeight - 48
+	DecorTableY           = DecorStoolY + DecorTableBelowStool
 	DecorTableW           = 56
 	DecorTableH           = 14
 	DecorStoolsPerTable   = 3

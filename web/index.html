@@ -220,20 +220,29 @@
   <script type="module">
     import { Database } from "https://cdn.jsdelivr.net/npm/@sqlitecloud/drivers/+esm";
 
-    const SCORE_SCHEMA = `
+    const CREATE_TABLE_SQL = `
 CREATE TABLE IF NOT EXISTS highscores (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,
   player_name  TEXT    NOT NULL,
   score        INTEGER NOT NULL,
   difficulty   TEXT    NOT NULL,
   created_at   TEXT    NOT NULL DEFAULT (datetime('now'))
-);
-CREATE INDEX IF NOT EXISTS idx_highscores_score ON highscores(score DESC);`;
+);`;
+
+    const CREATE_INDEX_SQL =
+      "CREATE INDEX IF NOT EXISTS idx_highscores_score ON highscores(score DESC);";
 
     let scoreDB = null;
     let scoreDBInit = null;
     let scoresCache = [];
     let scoresReady = true;
+    let pendingSaves = 0;
+
+    async function waitForPendingSaves() {
+      while (pendingSaves > 0) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+    }
 
     async function ensureScoreDB(url) {
       const conn = url || window.FLAPPY_SQLITECLOUD_URL || "";
@@ -242,7 +251,8 @@ CREATE INDEX IF NOT EXISTS idx_highscores_score ON highscores(score DESC);`;
       if (scoreDBInit) return scoreDBInit;
       scoreDBInit = (async () => {
         const db = new Database(conn);
-        await db.sql(SCORE_SCHEMA);
+        await db.sql(CREATE_TABLE_SQL);
+        await db.sql(CREATE_INDEX_SQL);
         scoreDB = db;
         return db;
       })();
@@ -260,21 +270,30 @@ CREATE INDEX IF NOT EXISTS idx_highscores_score ON highscores(score DESC);`;
     };
 
     window.flappySaveScore = function(name, score, difficulty) {
+      pendingSaves++;
       (async () => {
-        const db = await ensureScoreDB();
-        if (!db) return;
-        await db.sql(
-          "INSERT INTO highscores (player_name, score, difficulty) VALUES (?, ?, ?)",
-          name,
-          score,
-          difficulty
-        );
-      })().catch((err) => console.error("score save:", err));
+        try {
+          const db = await ensureScoreDB();
+          if (!db) return;
+          await db.sql(
+            "INSERT INTO highscores (player_name, score, difficulty) VALUES (?, ?, ?)",
+            name,
+            score,
+            difficulty
+          );
+          window.flappyRefreshScores(10);
+        } catch (err) {
+          console.error("score save:", err);
+        } finally {
+          pendingSaves--;
+        }
+      })();
     };
 
     window.flappyRefreshScores = function(limit) {
       scoresReady = false;
       (async () => {
+        await waitForPendingSaves();
         const db = await ensureScoreDB();
         if (!db) {
           scoresCache = [];
@@ -305,16 +324,31 @@ CREATE INDEX IF NOT EXISTS idx_highscores_score ON highscores(score DESC);`;
       return scoresCache;
     };
 
+    window.flappyHasScoreURL = function() {
+      return !!(window.FLAPPY_SQLITECLOUD_URL);
+    };
+
     if (window.FLAPPY_SQLITECLOUD_URL) {
       window.flappyInitScoreDB();
     }
+
+    window.flappyScoreBridgeReady = true;
+    window.dispatchEvent(new Event("flappyScoreBridgeReady"));
   </script>
   <script src="wasm_exec.js"></script>
   <script>
     const go = new Go();
 
+    async function waitForScoreBridge() {
+      if (typeof window.flappySaveScore === "function") return;
+      await new Promise((resolve) => {
+        window.addEventListener("flappyScoreBridgeReady", resolve, { once: true });
+      });
+    }
+
     async function startGame() {
       try {
+        await waitForScoreBridge();
         const resp = await fetch("./flappy.wasm");
         if (!resp.ok) {
           throw new Error("HTTP " + resp.status);

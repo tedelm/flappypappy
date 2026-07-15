@@ -2,6 +2,7 @@ package game
 
 import (
 	"log"
+	"sort"
 	"strings"
 	"sync"
 	"unicode"
@@ -16,21 +17,65 @@ type HighScores struct {
 	mu             sync.Mutex
 	entries        []HighScoreEntry
 	store          ScoreStore
+	active         bool
+	configured     bool
+	connectFailed  bool
+	initStarted    bool
+	saveWG         sync.WaitGroup
 	refreshPending bool
 	loading        bool
 }
 
-func NewHighScores(store ScoreStore) *HighScores {
-	h := &HighScores{store: store}
-	if store != nil {
-		go func() {
-			if err := store.EnsureSchema(); err != nil {
-				log.Printf("highscores: schema: %v", err)
-			}
-			h.RequestRefresh()
-		}()
+func NewHighScores(init StoreInit) *HighScores {
+	h := &HighScores{
+		store:         init.Store,
+		active:        init.Store != nil && init.Store.Active(),
+		configured:    init.Configured,
+		connectFailed: init.ConnectFailed,
+	}
+	if h.active {
+		h.startInit()
 	}
 	return h
+}
+
+func (h *HighScores) Active() bool {
+	h.ensureActive()
+	return h.active
+}
+
+func (h *HighScores) Configured() bool {
+	return h.configured
+}
+
+func (h *HighScores) ConnectFailed() bool {
+	return h.connectFailed
+}
+
+func (h *HighScores) ensureActive() {
+	if h.active || h.connectFailed || h.store == nil {
+		return
+	}
+	if !h.store.Active() {
+		return
+	}
+	h.active = true
+	h.configured = true
+	h.startInit()
+}
+
+func (h *HighScores) startInit() {
+	if h.initStarted {
+		return
+	}
+	h.initStarted = true
+	store := h.store
+	go func() {
+		if err := store.EnsureSchema(); err != nil {
+			log.Printf("highscores: schema: %v", err)
+		}
+		h.RequestRefresh()
+	}()
 }
 
 func normalizePlayerName(name string) string {
@@ -53,6 +98,8 @@ func normalizePlayerName(name string) string {
 }
 
 func (h *HighScores) Add(name string, score int, diff Difficulty) {
+	h.ensureActive()
+
 	entry := HighScoreEntry{
 		Name:  normalizePlayerName(name),
 		Score: score,
@@ -62,13 +109,8 @@ func (h *HighScores) Add(name string, score int, diff Difficulty) {
 	h.insertEntry(entry)
 	h.mu.Unlock()
 
-	if h.store != nil {
-		store := h.store
-		go func() {
-			if err := store.Save(entry.Name, entry.Score, diff); err != nil {
-				log.Printf("highscores: save: %v", err)
-			}
-		}()
+	if h.active {
+		saveScoreAsync(h, h.store, entry.Name, entry.Score, diff)
 	}
 }
 
@@ -104,7 +146,8 @@ func (h *HighScores) Loading() bool {
 }
 
 func (h *HighScores) RequestRefresh() {
-	if h.store == nil {
+	h.ensureActive()
+	if !h.active {
 		return
 	}
 	h.mu.Lock()
@@ -115,7 +158,7 @@ func (h *HighScores) RequestRefresh() {
 }
 
 func (h *HighScores) PollRefresh() {
-	if h.store == nil {
+	if !h.active {
 		return
 	}
 	h.mu.Lock()
@@ -131,10 +174,38 @@ func (h *HighScores) PollRefresh() {
 
 func (h *HighScores) applyEntries(entries []HighScoreEntry) {
 	h.mu.Lock()
-	h.entries = entries
+	h.entries = mergeEntries(h.entries, entries)
 	h.refreshPending = false
 	h.loading = false
 	h.mu.Unlock()
+}
+
+func mergeEntries(local, remote []HighScoreEntry) []HighScoreEntry {
+	type entryKey struct {
+		name  string
+		score int
+	}
+	seen := make(map[entryKey]bool, len(local)+len(remote))
+	out := make([]HighScoreEntry, 0, len(local)+len(remote))
+	add := func(e HighScoreEntry) {
+		k := entryKey{e.Name, e.Score}
+		if seen[k] {
+			return
+		}
+		seen[k] = true
+		out = append(out, e)
+	}
+	for _, e := range local {
+		add(e)
+	}
+	for _, e := range remote {
+		add(e)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Score > out[j].Score })
+	if len(out) > MaxHighScores {
+		out = out[:MaxHighScores]
+	}
+	return out
 }
 
 func (h *HighScores) clearRefreshState() {

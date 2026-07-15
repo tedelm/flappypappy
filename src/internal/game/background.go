@@ -12,7 +12,7 @@ import (
 const tableHashSalt = 0xABCDEF
 
 func drawPubBackground(screen *ebiten.Image, scrollX float64, seed int) {
-	playH := ScreenH - GroundHeight
+	playH := FloorSurfaceY
 	screen.Fill(ColorPubBase)
 
 	tile := sprite.PubWall()
@@ -28,6 +28,7 @@ func drawPubBackground(screen *ebiten.Image, scrollX float64, seed int) {
 		}
 	}
 
+	drawPubPanels(screen, scrollX)
 	drawPubDecor(screen, scrollX, seed)
 }
 
@@ -91,6 +92,17 @@ func drawPubTableClusters(screen *ebiten.Image, scrollX float64, seed int) {
 		}
 		centerScreenX := float64(worldX) - scrollX
 		drawPubTable(screen, centerScreenX, float64(DecorTableY))
+	}
+}
+
+func drawPubStools(screen *ebiten.Image, scrollX float64, seed int) {
+	worldStart, worldEnd := decorGridRange(scrollX, DecorTableChunkMin, DecorTableChunkMin)
+
+	for worldX := worldStart; worldX < worldEnd; worldX += DecorTableChunkMin {
+		if !tableShouldSpawn(seed, worldX) {
+			continue
+		}
+		centerScreenX := float64(worldX) - scrollX
 
 		stoolImg := sprite.PubStool()
 		stoolW := float64(stoolImg.Bounds().Dx()) * DecorStoolScale

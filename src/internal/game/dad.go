@@ -7,7 +7,7 @@ import (
 )
 
 func drawFatDad(screen *ebiten.Image, x, gapBottom float32) {
-	groundY := float32(ScreenH - GroundHeight)
+	groundY := float32(FloorSurfaceY)
 	zoneH := groundY - gapBottom
 
 	frame := sprite.Frame(sprite.FrameIndex(ebiten.Tick()))

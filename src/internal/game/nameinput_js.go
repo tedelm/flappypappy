@@ -2,11 +2,21 @@
 
 package game
 
-import "syscall/js"
+import (
+	"log"
+	"sync"
+
+	"syscall/js"
+)
+
+var missingJSWarn sync.Map
 
 func callJS(name string, args ...any) {
 	fn := js.Global().Get(name)
 	if fn.Type() != js.TypeFunction {
+		if _, loaded := missingJSWarn.LoadOrStore(name, true); !loaded {
+			log.Printf("js bridge: function %q not available", name)
+		}
 		return
 	}
 	fn.Invoke(args...)

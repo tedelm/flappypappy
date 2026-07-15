@@ -144,7 +144,7 @@ func New() *Game {
 		difficulty: DifficultyEasy,
 		bird:       NewBird(),
 		pipes:      NewPipeManager(),
-		highScores: NewHighScores(NewScoreStore()),
+		highScores: NewHighScores(InitScoreStore()),
 		loadDone:   make(chan loadResult, 1),
 	}
 }
@@ -420,7 +420,14 @@ func (g *Game) Update() error {
 		g.bird.Update()
 		g.pipes.Update()
 		g.bgScrollX += g.pipes.Speed() * BgParallaxFactor
-		g.rawScore += g.pipes.CheckScore(g.bird.X)
+		if delta := g.pipes.CheckScore(g.bird.X); delta > 0 {
+			g.rawScore += delta
+			if g.music != nil {
+				for i := 0; i < delta; i++ {
+					g.music.PlayPassDad()
+				}
+			}
+		}
 
 		if g.invincibleFrames > 0 {
 			g.invincibleFrames--
@@ -484,7 +491,7 @@ func (g *Game) hitBounds(bx, by, bw, bh float64) bool {
 	if by < 0 {
 		return true
 	}
-	groundY := float64(ScreenH - GroundHeight)
+	groundY := float64(FloorSurfaceY)
 	return by+bh > groundY
 }
 
@@ -496,8 +503,10 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	drawPubBackground(screen, g.bgScrollX, g.decorSeed)
 
 	if g.state != StateLoading {
-		g.pipes.Draw(screen)
-		drawPubForeground(screen)
+		g.pipes.DrawLamps(screen)
+		drawWoodenFloor(screen)
+		drawPubStools(screen, g.bgScrollX, g.decorSeed)
+		g.pipes.DrawDads(screen)
 	}
 
 	switch g.state {
@@ -644,15 +653,23 @@ func drawEnterNameScreen(screen *ebiten.Image, g *Game) {
 func drawHighScoresScreen(screen *ebiten.Image, scores *HighScores) {
 	drawTitle(screen, "HIGH SCORES", ScreenW/2, 80)
 
-	entries := scores.List()
-	if scores.Loading() {
-		drawLabel(screen, "Loading...", ScreenW/2, 180, ColorTextMuted)
-	} else if len(entries) == 0 {
-		drawLabel(screen, "No scores yet", ScreenW/2, 180, ColorTextMuted)
+	if scores.ConnectFailed() {
+		drawLabel(screen, "Could not reach leaderboard", ScreenW/2, 180, ColorTextMuted)
+	} else if !scores.Active() {
+		drawLabel(screen, "Scores not synced", ScreenW/2, 160, ColorTextMuted)
+		drawLabel(screen, "Set FLAPPY_SQLITECLOUD_URL", ScreenW/2, 190, ColorTextMuted)
+		drawLabel(screen, "or web/config.js", ScreenW/2, 218, ColorTextMuted)
 	} else {
-		for i, e := range entries {
-			line := fmt.Sprintf("%d. %-8s %d", i+1, e.Name, e.Score)
-			drawLabel(screen, line, ScreenW/2, 140+float64(i)*28, ColorText)
+		entries := scores.List()
+		if scores.Loading() {
+			drawLabel(screen, "Loading...", ScreenW/2, 180, ColorTextMuted)
+		} else if len(entries) == 0 {
+			drawLabel(screen, "No scores yet", ScreenW/2, 180, ColorTextMuted)
+		} else {
+			for i, e := range entries {
+				line := fmt.Sprintf("%d. %-8s %d", i+1, e.Name, e.Score)
+				drawLabel(screen, line, ScreenW/2, 140+float64(i)*28, ColorText)
+			}
 		}
 	}
 

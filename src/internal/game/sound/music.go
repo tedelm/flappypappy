@@ -5,18 +5,20 @@ import (
 	"embed"
 	"fmt"
 	"io"
+	"math/rand"
 
 	"github.com/hajimehoshi/ebiten/v2/audio"
 	"github.com/hajimehoshi/ebiten/v2/audio/mp3"
 )
 
-//go:embed game_music.mp3 game_music_menu.mp3 beer_glass_hit.mp3 jump.mp3 laugh.mp3
+//go:embed game_music.mp3 game_music_menu.mp3 beer_glass_hit.mp3 jump.mp3 laugh.mp3 hey1.mp3 hey2.mp3
 var assets embed.FS
 
 const (
-	sampleRate  = 44100
-	musicVolume = 0.45
-	sfxVolume   = 0.8
+	sampleRate     = 44100
+	musicVolume    = 0.45
+	sfxVolume      = 0.8
+	passDadHeyProb = 0.33
 )
 
 type Manager struct {
@@ -26,6 +28,8 @@ type Manager struct {
 	lifeLostPlayer *audio.Player
 	jumpPlayer     *audio.Player
 	gameOverPlayer *audio.Player
+	hey1Player     *audio.Player
+	hey2Player     *audio.Player
 	menuMode       bool
 }
 
@@ -72,6 +76,29 @@ func NewManager() (*Manager, error) {
 	}
 	gameOverPlayer.SetVolume(sfxVolume)
 
+	hey1Player, err := newOneShotPlayer(ctx, "hey1.mp3")
+	if err != nil {
+		menuPlayer.Close()
+		gamePlayer.Close()
+		lifeLostPlayer.Close()
+		jumpPlayer.Close()
+		gameOverPlayer.Close()
+		return nil, fmt.Errorf("hey1 sfx: %w", err)
+	}
+	hey1Player.SetVolume(sfxVolume)
+
+	hey2Player, err := newOneShotPlayer(ctx, "hey2.mp3")
+	if err != nil {
+		menuPlayer.Close()
+		gamePlayer.Close()
+		lifeLostPlayer.Close()
+		jumpPlayer.Close()
+		gameOverPlayer.Close()
+		hey1Player.Close()
+		return nil, fmt.Errorf("hey2 sfx: %w", err)
+	}
+	hey2Player.SetVolume(sfxVolume)
+
 	return &Manager{
 		ctx:            ctx,
 		menuPlayer:     menuPlayer,
@@ -79,6 +106,8 @@ func NewManager() (*Manager, error) {
 		lifeLostPlayer: lifeLostPlayer,
 		jumpPlayer:     jumpPlayer,
 		gameOverPlayer: gameOverPlayer,
+		hey1Player:     hey1Player,
+		hey2Player:     hey2Player,
 	}, nil
 }
 
@@ -142,6 +171,21 @@ func (m *Manager) PlayGameOver() {
 	m.gameOverPlayer.Play()
 }
 
+func (m *Manager) PlayPassDad() {
+	if m == nil || m.hey1Player == nil || m.hey2Player == nil {
+		return
+	}
+	if rand.Float64() >= passDadHeyProb {
+		return
+	}
+	player := m.hey1Player
+	if rand.Intn(2) == 1 {
+		player = m.hey2Player
+	}
+	_ = player.Rewind()
+	player.Play()
+}
+
 func (m *Manager) SetMode(menu bool) {
 	if m == nil || m.menuMode == menu {
 		return
@@ -187,6 +231,16 @@ func (m *Manager) Close() error {
 	}
 	if m.gameOverPlayer != nil {
 		if e := m.gameOverPlayer.Close(); e != nil && err == nil {
+			err = e
+		}
+	}
+	if m.hey1Player != nil {
+		if e := m.hey1Player.Close(); e != nil && err == nil {
+			err = e
+		}
+	}
+	if m.hey2Player != nil {
+		if e := m.hey2Player.Close(); e != nil && err == nil {
 			err = e
 		}
 	}

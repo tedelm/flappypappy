@@ -40,7 +40,7 @@ func (pm *PipeManager) Reset() {
 
 func (pm *PipeManager) spawn() {
 	minGapY := 80.0
-	maxGapY := float64(ScreenH-GroundHeight) - pm.pipeGap - 80
+	maxGapY := float64(FloorSurfaceY) - pm.pipeGap - 80
 	gapY := minGapY + rand.Float64()*(maxGapY-minGapY)
 
 	pm.pipes = append(pm.pipes, &Pipe{
@@ -89,7 +89,7 @@ func (pm *PipeManager) Collides(bx, by, bw, bh float64) bool {
 			return true
 		}
 		gapBottom := p.GapY + p.GapH
-		groundTop := float64(ScreenH - GroundHeight)
+		groundTop := float64(FloorSurfaceY)
 		if aabbOverlap(bx, by, bw, bh, p.X, gapBottom, PipeWidth, groundTop-gapBottom) {
 			return true
 		}
@@ -97,13 +97,17 @@ func (pm *PipeManager) Collides(bx, by, bw, bh float64) bool {
 	return false
 }
 
-func (pm *PipeManager) Draw(screen *ebiten.Image) {
+func (pm *PipeManager) DrawLamps(screen *ebiten.Image) {
 	for _, p := range pm.pipes {
 		x := float32(p.X)
-
 		topH := float32(p.GapY)
 		drawPoolLamp(screen, x, topH)
+	}
+}
 
+func (pm *PipeManager) DrawDads(screen *ebiten.Image) {
+	for _, p := range pm.pipes {
+		x := float32(p.X)
 		gapBottom := float32(p.GapY + p.GapH)
 		drawFatDad(screen, x, gapBottom)
 	}

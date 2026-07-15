@@ -6,8 +6,32 @@ import "syscall/js"
 
 type jsStore struct{}
 
+func InitScoreStore() StoreInit {
+	configured := jsHasScoreURL()
+	return StoreInit{
+		Store:      jsStore{},
+		Configured: configured,
+	}
+}
+
 func NewScoreStore() ScoreStore {
-	return jsStore{}
+	return InitScoreStore().Store
+}
+
+func (jsStore) Active() bool {
+	return jsHasScoreURL()
+}
+
+func jsHasScoreURL() bool {
+	fn := js.Global().Get("flappyHasScoreURL")
+	if fn.Type() == js.TypeFunction {
+		return fn.Invoke().Bool()
+	}
+	v := js.Global().Get("FLAPPY_SQLITECLOUD_URL")
+	if v.Type() != js.TypeString {
+		return false
+	}
+	return v.String() != ""
 }
 
 func (jsStore) EnsureSchema() error {
