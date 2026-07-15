@@ -10,7 +10,7 @@ const PRECACHE_URLS = [
   "./icons/icon-512.png",
 ];
 
-const NETWORK_FIRST = ["index.html", "flappy.wasm", "wasm_exec.js"];
+const NETWORK_FIRST = ["index.html", "flappy.wasm", "wasm_exec.js", "config.js"];
 
 async function cacheFirst(request) {
   const cached = await caches.match(request);

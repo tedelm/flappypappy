@@ -390,6 +390,7 @@ func (g *Game) updateLoading() {
 
 func (g *Game) Update() error {
 	g.frames++
+	g.highScores.PollBridge()
 	g.highScores.PollRefresh()
 
 	switch g.state {

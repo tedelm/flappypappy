@@ -9,8 +9,9 @@ type jsStore struct{}
 func InitScoreStore() StoreInit {
 	configured := jsHasScoreURL()
 	return StoreInit{
-		Store:      jsStore{},
-		Configured: configured,
+		Store:         jsStore{},
+		Configured:    configured,
+		ConnectFailed: configured && jsScoreDBFailed(),
 	}
 }
 
@@ -19,7 +20,7 @@ func NewScoreStore() ScoreStore {
 }
 
 func (jsStore) Active() bool {
-	return jsHasScoreURL()
+	return jsHasScoreURL() && !jsScoreDBFailed()
 }
 
 func jsHasScoreURL() bool {
@@ -32,6 +33,22 @@ func jsHasScoreURL() bool {
 		return false
 	}
 	return v.String() != ""
+}
+
+func jsScoreBridgeLive() bool {
+	fn := js.Global().Get("flappyScoreBridgeLive")
+	if fn.Type() != js.TypeFunction {
+		return false
+	}
+	return fn.Invoke().Bool()
+}
+
+func jsScoreDBFailed() bool {
+	fn := js.Global().Get("flappyScoreDBFailed")
+	if fn.Type() != js.TypeFunction {
+		return false
+	}
+	return fn.Invoke().Bool()
 }
 
 func (jsStore) EnsureSchema() error {
@@ -55,7 +72,7 @@ func jsBeginRefresh(limit int) {
 func jsScoresReady() bool {
 	fn := js.Global().Get("flappyScoresReady")
 	if fn.Type() != js.TypeFunction {
-		return true
+		return false
 	}
 	return fn.Invoke().Bool()
 }

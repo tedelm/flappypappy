@@ -13,7 +13,7 @@ type ScoreStore interface {
 type StoreInit struct {
 	Store         ScoreStore
 	Configured    bool // URL was found (env or config.js)
-	ConnectFailed bool // URL found but connection failed (native only)
+	ConnectFailed bool // URL found but connection failed
 }
 
 func escapeSQLString(s string) string {

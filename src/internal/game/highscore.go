@@ -14,16 +14,17 @@ type HighScoreEntry struct {
 }
 
 type HighScores struct {
-	mu             sync.Mutex
-	entries        []HighScoreEntry
-	store          ScoreStore
-	active         bool
-	configured     bool
-	connectFailed  bool
-	initStarted    bool
-	saveWG         sync.WaitGroup
-	refreshPending bool
-	loading        bool
+	mu              sync.Mutex
+	entries         []HighScoreEntry
+	store           ScoreStore
+	active          bool
+	configured      bool
+	connectFailed   bool
+	initStarted     bool
+	bridgeReadySeen bool
+	saveWG          sync.WaitGroup
+	refreshPending  bool
+	loading         bool
 }
 
 func NewHighScores(init StoreInit) *HighScores {
@@ -170,6 +171,10 @@ func (h *HighScores) PollRefresh() {
 	if entries, done := pollStoreRefresh(); done {
 		h.applyEntries(entries)
 	}
+}
+
+func (h *HighScores) PollBridge() {
+	pollBridgeReady(h)
 }
 
 func (h *HighScores) applyEntries(entries []HighScoreEntry) {

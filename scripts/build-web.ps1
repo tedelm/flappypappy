@@ -31,6 +31,15 @@ Copy-Item $wasmExec (Join-Path $Docs "wasm_exec.js")
 
 Copy-Item (Join-Path $Web "index.html") $Docs
 Copy-Item (Join-Path $Web "manifest.webmanifest") $Docs
+$vendorSrc = Join-Path $Web "vendor"
+$vendorFile = Join-Path $vendorSrc "sqlitecloud-drivers.mjs"
+if (-not (Test-Path $vendorFile)) {
+    New-Item -ItemType Directory -Force -Path $vendorSrc | Out-Null
+    Invoke-WebRequest -Uri "https://cdn.jsdelivr.net/npm/@sqlitecloud/drivers/+esm" -OutFile $vendorFile
+}
+if (Test-Path $vendorSrc) {
+    Copy-Item $vendorSrc (Join-Path $Docs "vendor") -Recurse
+}
 $configSrc = Join-Path $Web "config.js"
 if (Test-Path $configSrc) {
     Copy-Item $configSrc $Docs

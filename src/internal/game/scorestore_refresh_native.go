@@ -32,3 +32,5 @@ func saveScoreAsync(h *HighScores, store ScoreStore, name string, score int, dif
 		h.RequestRefresh()
 	}()
 }
+
+func pollBridgeReady(h *HighScores) {}
