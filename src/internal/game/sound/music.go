@@ -10,7 +10,7 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/audio/mp3"
 )
 
-//go:embed game_music.mp3 game_music_menu.mp3 beer_glass_hit.mp3 jump.mp3
+//go:embed game_music.mp3 game_music_menu.mp3 beer_glass_hit.mp3 jump.mp3 laugh.mp3
 var assets embed.FS
 
 const (
@@ -25,6 +25,7 @@ type Manager struct {
 	gamePlayer     *audio.Player
 	lifeLostPlayer *audio.Player
 	jumpPlayer     *audio.Player
+	gameOverPlayer *audio.Player
 	menuMode       bool
 }
 
@@ -61,12 +62,23 @@ func NewManager() (*Manager, error) {
 	}
 	jumpPlayer.SetVolume(sfxVolume)
 
+	gameOverPlayer, err := newOneShotPlayer(ctx, "laugh.mp3")
+	if err != nil {
+		menuPlayer.Close()
+		gamePlayer.Close()
+		lifeLostPlayer.Close()
+		jumpPlayer.Close()
+		return nil, fmt.Errorf("game over sfx: %w", err)
+	}
+	gameOverPlayer.SetVolume(sfxVolume)
+
 	return &Manager{
 		ctx:            ctx,
 		menuPlayer:     menuPlayer,
 		gamePlayer:     gamePlayer,
 		lifeLostPlayer: lifeLostPlayer,
 		jumpPlayer:     jumpPlayer,
+		gameOverPlayer: gameOverPlayer,
 	}, nil
 }
 
@@ -122,6 +134,14 @@ func (m *Manager) PlayLifeLost() {
 	m.lifeLostPlayer.Play()
 }
 
+func (m *Manager) PlayGameOver() {
+	if m == nil || m.gameOverPlayer == nil {
+		return
+	}
+	_ = m.gameOverPlayer.Rewind()
+	m.gameOverPlayer.Play()
+}
+
 func (m *Manager) SetMode(menu bool) {
 	if m == nil || m.menuMode == menu {
 		return
@@ -162,6 +182,11 @@ func (m *Manager) Close() error {
 	}
 	if m.jumpPlayer != nil {
 		if e := m.jumpPlayer.Close(); e != nil && err == nil {
+			err = e
+		}
+	}
+	if m.gameOverPlayer != nil {
+		if e := m.gameOverPlayer.Close(); e != nil && err == nil {
 			err = e
 		}
 	}

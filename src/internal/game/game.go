@@ -198,6 +198,9 @@ func (g *Game) loseLife() {
 	if g.lives > 0 {
 		g.state = StateContinue
 	} else {
+		if g.music != nil {
+			g.music.PlayGameOver()
+		}
 		g.playerName = ""
 		g.state = StateEnterName
 		g.nameInputOpen = true
