@@ -216,6 +216,99 @@
       window.visualViewport.addEventListener("resize", repositionNameInputIfVisible);
     }
   </script>
+  <script src="config.js"></script>
+  <script type="module">
+    import { Database } from "https://cdn.jsdelivr.net/npm/@sqlitecloud/drivers/+esm";
+
+    const SCORE_SCHEMA = `
+CREATE TABLE IF NOT EXISTS highscores (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  player_name  TEXT    NOT NULL,
+  score        INTEGER NOT NULL,
+  difficulty   TEXT    NOT NULL,
+  created_at   TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_highscores_score ON highscores(score DESC);`;
+
+    let scoreDB = null;
+    let scoreDBInit = null;
+    let scoresCache = [];
+    let scoresReady = true;
+
+    async function ensureScoreDB(url) {
+      const conn = url || window.FLAPPY_SQLITECLOUD_URL || "";
+      if (!conn) return null;
+      if (scoreDB) return scoreDB;
+      if (scoreDBInit) return scoreDBInit;
+      scoreDBInit = (async () => {
+        const db = new Database(conn);
+        await db.sql(SCORE_SCHEMA);
+        scoreDB = db;
+        return db;
+      })();
+      try {
+        return await scoreDBInit;
+      } catch (err) {
+        console.error("score db init:", err);
+        scoreDBInit = null;
+        return null;
+      }
+    }
+
+    window.flappyInitScoreDB = function(url) {
+      ensureScoreDB(url).catch((err) => console.error("score db init:", err));
+    };
+
+    window.flappySaveScore = function(name, score, difficulty) {
+      (async () => {
+        const db = await ensureScoreDB();
+        if (!db) return;
+        await db.sql(
+          "INSERT INTO highscores (player_name, score, difficulty) VALUES (?, ?, ?)",
+          name,
+          score,
+          difficulty
+        );
+      })().catch((err) => console.error("score save:", err));
+    };
+
+    window.flappyRefreshScores = function(limit) {
+      scoresReady = false;
+      (async () => {
+        const db = await ensureScoreDB();
+        if (!db) {
+          scoresCache = [];
+          return;
+        }
+        const rows = await db.sql(
+          "SELECT player_name, score FROM highscores ORDER BY score DESC LIMIT ?",
+          limit
+        );
+        scoresCache = rows.map((row) => ({
+          name: row.player_name,
+          score: Number(row.score),
+        }));
+      })()
+        .catch((err) => {
+          console.error("score refresh:", err);
+        })
+        .finally(() => {
+          scoresReady = true;
+        });
+    };
+
+    window.flappyScoresReady = function() {
+      return scoresReady;
+    };
+
+    window.flappyGetScores = function() {
+      return scoresCache;
+    };
+
+    if (window.FLAPPY_SQLITECLOUD_URL) {
+      window.flappyInitScoreDB();
+    }
+  </script>
   <script src="wasm_exec.js"></script>
   <script>
     const go = new Go();

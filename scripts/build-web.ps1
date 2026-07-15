@@ -31,6 +31,12 @@ Copy-Item $wasmExec (Join-Path $Docs "wasm_exec.js")
 
 Copy-Item (Join-Path $Web "index.html") $Docs
 Copy-Item (Join-Path $Web "manifest.webmanifest") $Docs
+$configSrc = Join-Path $Web "config.js"
+if (Test-Path $configSrc) {
+    Copy-Item $configSrc $Docs
+} else {
+    'window.FLAPPY_SQLITECLOUD_URL = "";' | Set-Content (Join-Path $Docs "config.js") -NoNewline
+}
 
 $BuildId = (Get-Date).ToUniversalTime().ToString("yyyyMMddHHmmss")
 Push-Location $Root

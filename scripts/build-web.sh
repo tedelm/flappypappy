@@ -21,6 +21,11 @@ fi
 
 cp "$WEB/index.html" "$DOCS/"
 cp "$WEB/manifest.webmanifest" "$DOCS/"
+if [ -f "$WEB/config.js" ]; then
+  cp "$WEB/config.js" "$DOCS/"
+else
+  echo 'window.FLAPPY_SQLITECLOUD_URL = "";' > "$DOCS/config.js"
+fi
 
 BUILD_ID="$(date -u +%Y%m%d%H%M%S)"
 if git -C "$ROOT" rev-parse --short HEAD >/dev/null 2>&1; then

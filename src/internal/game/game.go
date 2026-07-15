@@ -144,7 +144,7 @@ func New() *Game {
 		difficulty: DifficultyEasy,
 		bird:       NewBird(),
 		pipes:      NewPipeManager(),
-		highScores: NewHighScores(),
+		highScores: NewHighScores(NewScoreStore()),
 		loadDone:   make(chan loadResult, 1),
 	}
 }
@@ -216,7 +216,7 @@ func (g *Game) continueGame() {
 
 func (g *Game) submitHighScore() {
 	SyncNameInput(&g.playerName)
-	g.highScores.Add(g.playerName, g.displayScore())
+	g.highScores.Add(g.playerName, g.displayScore(), g.difficulty)
 	g.reset()
 }
 
@@ -390,6 +390,7 @@ func (g *Game) updateLoading() {
 
 func (g *Game) Update() error {
 	g.frames++
+	g.highScores.PollRefresh()
 
 	switch g.state {
 	case StateLoading:
@@ -404,6 +405,7 @@ func (g *Game) Update() error {
 			lx, ly, lw, lh := highScoresLinkBounds()
 			if pointInRect(px, py, lx, ly, lw, lh) {
 				g.state = StateHighScores
+				g.highScores.RequestRefresh()
 			} else if d, hit := difficultyAtPointer(px, py); hit {
 				g.difficulty = d
 			} else if g.readyStartInputAt(px, py) {
@@ -643,7 +645,9 @@ func drawHighScoresScreen(screen *ebiten.Image, scores *HighScores) {
 	drawTitle(screen, "HIGH SCORES", ScreenW/2, 80)
 
 	entries := scores.List()
-	if len(entries) == 0 {
+	if scores.Loading() {
+		drawLabel(screen, "Loading...", ScreenW/2, 180, ColorTextMuted)
+	} else if len(entries) == 0 {
 		drawLabel(screen, "No scores yet", ScreenW/2, 180, ColorTextMuted)
 	} else {
 		for i, e := range entries {

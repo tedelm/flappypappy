@@ -30,6 +30,18 @@ jobs:
           go-version: "1.25.x"
           cache-dependency-path: src/go.sum
 
+      - name: Write SQLite Cloud config
+        env:
+          FLAPPY_SQLITECLOUD_URL: ${{ secrets.FLAPPY_SQLITECLOUD_URL }}
+        run: |
+          if [ -n "$FLAPPY_SQLITECLOUD_URL" ]; then
+            printf 'window.FLAPPY_SQLITECLOUD_URL = %s;\n' \
+              "$(python3 -c 'import json, os; print(json.dumps(os.environ["FLAPPY_SQLITECLOUD_URL"]))')" \
+              > web/config.js
+          else
+            echo 'window.FLAPPY_SQLITECLOUD_URL = "";' > web/config.js
+          fi
+
       - name: Build web bundle
         run: bash scripts/build-web.sh
 
