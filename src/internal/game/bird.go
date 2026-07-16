@@ -6,6 +6,8 @@ import (
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/vector"
+
+	"flappy/internal/game/sprite"
 )
 
 type Bird struct {
@@ -65,6 +67,28 @@ func (b *Bird) tiltAngle() float64 {
 
 func (b *Bird) Draw(screen *ebiten.Image) {
 	drawBeerGlass(screen, b.X, b.Y, b.Width, b.Height, b.tiltAngle())
+}
+
+func drawRunningPlayer(screen *ebiten.Image, cx, cy, width, height, angle float64) {
+	frame := sprite.RunningFrame(sprite.RunningFrameIndex(ebiten.Tick()))
+	fw := float64(frame.Bounds().Dx())
+	fh := float64(frame.Bounds().Dy())
+	if fw <= 0 || fh <= 0 {
+		return
+	}
+
+	scale := height / fh
+	// Keep visual footprint near the collision box when aspect is wide.
+	if drawW := fw * scale; width > 0 && drawW > width*1.25 {
+		scale = width / fw
+	}
+
+	op := &ebiten.DrawImageOptions{}
+	op.GeoM.Translate(-fw/2, -fh/2)
+	op.GeoM.Scale(scale, scale)
+	op.GeoM.Rotate(angle)
+	op.GeoM.Translate(cx, cy)
+	screen.DrawImage(frame, op)
 }
 
 func drawBeerGlass(screen *ebiten.Image, cx, cy, width, height, angle float64) {
