@@ -11,7 +11,7 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/audio/mp3"
 )
 
-//go:embed game_music.mp3 game_music_menu.mp3 game_music_boss_1.mp3 beer_glass_hit.mp3 beer_glass_break.mp3 jump.mp3 laugh.mp3 hey1.mp3 hey2.mp3 power_up.mp3 player_win.mp3 ouch_1.mp3 ouch_2.mp3 wrongwithyou.mp3
+//go:embed game_music.mp3 game_music_menu.mp3 game_music_boss_1.mp3 beer_glass_hit.mp3 beer_glass_break.mp3 jump.mp3 laugh.mp3 hey1.mp3 hey2.mp3 power_up.mp3 player_win.mp3 ouch_1.mp3 ouch_2.mp3 wrongwithyou.mp3 footstep.mp3 laughing_run.mp3
 var assets embed.FS
 
 const (
@@ -30,21 +30,23 @@ const (
 )
 
 type Manager struct {
-	ctx              *audio.Context
-	menuPlayer       *audio.Player
-	gamePlayer       *audio.Player
-	bossPlayer       *audio.Player
-	lifeLostPlayer   *audio.Player
-	glassBreakPlayer *audio.Player
-	jumpPlayer       *audio.Player
-	gameOverPlayer   *audio.Player
-	hey1Player       *audio.Player
-	hey2Player       *audio.Player
-	powerUpPlayer    *audio.Player
-	playerWinPlayer  *audio.Player
+	ctx                *audio.Context
+	menuPlayer         *audio.Player
+	gamePlayer         *audio.Player
+	bossPlayer         *audio.Player
+	lifeLostPlayer     *audio.Player
+	glassBreakPlayer   *audio.Player
+	jumpPlayer         *audio.Player
+	gameOverPlayer     *audio.Player
+	hey1Player         *audio.Player
+	hey2Player         *audio.Player
+	powerUpPlayer      *audio.Player
+	playerWinPlayer    *audio.Player
 	ouch1Player        *audio.Player
 	ouch2Player        *audio.Player
 	wrongWithYouPlayer *audio.Player
+	footstepPlayer     *audio.Player
+	laughingRunPlayer  *audio.Player
 	mode               MusicMode
 	modeSet            bool
 }
@@ -227,6 +229,47 @@ func NewManager() (*Manager, error) {
 	}
 	wrongWithYouPlayer.SetVolume(sfxVolume)
 
+	footstepPlayer, err := newOneShotPlayer(ctx, "footstep.mp3")
+	if err != nil {
+		menuPlayer.Close()
+		gamePlayer.Close()
+		bossPlayer.Close()
+		lifeLostPlayer.Close()
+		glassBreakPlayer.Close()
+		jumpPlayer.Close()
+		gameOverPlayer.Close()
+		hey1Player.Close()
+		hey2Player.Close()
+		powerUpPlayer.Close()
+		playerWinPlayer.Close()
+		ouch1Player.Close()
+		ouch2Player.Close()
+		wrongWithYouPlayer.Close()
+		return nil, fmt.Errorf("footstep sfx: %w", err)
+	}
+	footstepPlayer.SetVolume(sfxVolume)
+
+	laughingRunPlayer, err := newOneShotPlayer(ctx, "laughing_run.mp3")
+	if err != nil {
+		menuPlayer.Close()
+		gamePlayer.Close()
+		bossPlayer.Close()
+		lifeLostPlayer.Close()
+		glassBreakPlayer.Close()
+		jumpPlayer.Close()
+		gameOverPlayer.Close()
+		hey1Player.Close()
+		hey2Player.Close()
+		powerUpPlayer.Close()
+		playerWinPlayer.Close()
+		ouch1Player.Close()
+		ouch2Player.Close()
+		wrongWithYouPlayer.Close()
+		footstepPlayer.Close()
+		return nil, fmt.Errorf("laughing run sfx: %w", err)
+	}
+	laughingRunPlayer.SetVolume(sfxVolume)
+
 	return &Manager{
 		ctx:                ctx,
 		menuPlayer:         menuPlayer,
@@ -243,6 +286,8 @@ func NewManager() (*Manager, error) {
 		ouch1Player:        ouch1Player,
 		ouch2Player:        ouch2Player,
 		wrongWithYouPlayer: wrongWithYouPlayer,
+		footstepPlayer:     footstepPlayer,
+		laughingRunPlayer:  laughingRunPlayer,
 	}, nil
 }
 
@@ -365,6 +410,22 @@ func (m *Manager) PlayWrongWithYou() {
 	m.wrongWithYouPlayer.Play()
 }
 
+func (m *Manager) PlayFootstep() {
+	if m == nil || m.footstepPlayer == nil {
+		return
+	}
+	_ = m.footstepPlayer.Rewind()
+	m.footstepPlayer.Play()
+}
+
+func (m *Manager) PlayLaughingRun() {
+	if m == nil || m.laughingRunPlayer == nil {
+		return
+	}
+	_ = m.laughingRunPlayer.Rewind()
+	m.laughingRunPlayer.Play()
+}
+
 func (m *Manager) SetMode(mode MusicMode) {
 	if m == nil || (m.modeSet && m.mode == mode) {
 		return
@@ -461,6 +522,16 @@ func (m *Manager) Close() error {
 	}
 	if m.wrongWithYouPlayer != nil {
 		if e := m.wrongWithYouPlayer.Close(); e != nil && err == nil {
+			err = e
+		}
+	}
+	if m.footstepPlayer != nil {
+		if e := m.footstepPlayer.Close(); e != nil && err == nil {
+			err = e
+		}
+	}
+	if m.laughingRunPlayer != nil {
+		if e := m.laughingRunPlayer.Close(); e != nil && err == nil {
 			err = e
 		}
 	}
