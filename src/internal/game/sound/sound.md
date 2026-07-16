@@ -25,6 +25,7 @@ Music is embedded as MP3 and played through Ebitengine's audio API.
 | File | Used in |
 |------|---------|
 | `beer_glass_hit.mp3` | Life lost (`loseLife()` — pipe/ground collision) |
+| `beer_glass_break.mp3` | Boss hit (`PlayGlassBreak()` — beer glass connects in boss fight) |
 | `jump.mp3` | Flap / jump (`flap()` — tap, space, start, continue) |
 | `laugh.mp3` | Game over (`loseLife()` when lives reach 0; plays with `beer_glass_hit.mp3`) |
 | `hey1.mp3`, `hey2.mp3` | Pass dad (`PlayPassDad()` — ~33% chance per pipe scored) |

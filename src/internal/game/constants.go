@@ -68,15 +68,16 @@ var (
 		{42, 30, 20, 255}, // burnt rust/orange
 		{24, 38, 38, 255}, // teal
 	}
-	ColorText      = color.RGBA{245, 245, 240, 255}
-	ColorTextMuted = color.RGBA{200, 200, 195, 255}
-	ColorKeg       = color.RGBA{139, 69, 19, 255}
-	ColorKegBand   = color.RGBA{184, 134, 11, 255}
-	ColorKegRim    = color.RGBA{101, 67, 33, 255}
-	ColorKegEdge   = color.RGBA{80, 50, 20, 255}
-	ColorGlass     = color.RGBA{200, 200, 210, 255}
-	ColorGlassEdge = color.RGBA{140, 140, 150, 255}
-	ColorBeer      = color.RGBA{218, 165, 32, 255}
-	ColorFoam      = color.RGBA{255, 250, 240, 255}
-	ColorBubble    = color.RGBA{255, 230, 150, 255}
+	ColorText        = color.RGBA{245, 245, 240, 255}
+	ColorTextMuted   = color.RGBA{200, 200, 195, 255}
+	ColorTextOutline = color.RGBA{20, 12, 8, 220}
+	ColorKeg         = color.RGBA{139, 69, 19, 255}
+	ColorKegBand     = color.RGBA{184, 134, 11, 255}
+	ColorKegRim      = color.RGBA{101, 67, 33, 255}
+	ColorKegEdge     = color.RGBA{80, 50, 20, 255}
+	ColorGlass       = color.RGBA{200, 200, 210, 255}
+	ColorGlassEdge   = color.RGBA{140, 140, 150, 255}
+	ColorBeer        = color.RGBA{218, 165, 32, 255}
+	ColorFoam        = color.RGBA{255, 250, 240, 255}
+	ColorBubble      = color.RGBA{255, 230, 150, 255}
 )

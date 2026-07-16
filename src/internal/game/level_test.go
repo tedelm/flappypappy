@@ -106,7 +106,83 @@ func TestBossConstants(t *testing.T) {
 	if BossHitsRequired != 5 {
 		t.Errorf("BossHitsRequired = %d, want 5", BossHitsRequired)
 	}
-	if BossThrowsAllowed != 7 {
-		t.Errorf("BossThrowsAllowed = %d, want 7", BossThrowsAllowed)
+	if BossThrowsAllowed != 8 {
+		t.Errorf("BossThrowsAllowed = %d, want 8", BossThrowsAllowed)
+	}
+}
+
+func TestBossHitsAndThrowsForLevel(t *testing.T) {
+	cases := []struct {
+		level, wantHits, wantThrows int
+	}{
+		{1, 5, 8},
+		{2, 6, 9},
+		{5, 9, 12},
+		{0, 5, 8}, // clamped to level 1
+	}
+	for _, tt := range cases {
+		hits := BossHitsForLevel(tt.level)
+		throws := BossThrowsForLevel(tt.level)
+		if hits != tt.wantHits || throws != tt.wantThrows {
+			t.Errorf("level %d: hits/throws = %d/%d, want %d/%d",
+				tt.level, hits, throws, tt.wantHits, tt.wantThrows)
+		}
+		if hits > throws {
+			t.Errorf("level %d: hits %d exceeds throws %d", tt.level, hits, throws)
+		}
+	}
+}
+
+func TestBossMoveSpeedForLevel(t *testing.T) {
+	if got := BossMoveSpeedForLevel(1); got != bossBaseMoveSpeed {
+		t.Errorf("BossMoveSpeedForLevel(1) = %v, want %v", got, bossBaseMoveSpeed)
+	}
+	l5 := BossMoveSpeedForLevel(5)
+	want5 := bossBaseMoveSpeed + 4*bossMoveSpeedPerLvl
+	if l5 != want5 {
+		t.Errorf("BossMoveSpeedForLevel(5) = %v, want %v", l5, want5)
+	}
+	if BossMoveSpeedForLevel(1) >= BossMoveSpeedForLevel(5) {
+		t.Error("expected higher level to move faster")
+	}
+	if got := BossMoveSpeedForLevel(100); got != bossMaxMoveSpeed {
+		t.Errorf("BossMoveSpeedForLevel(100) = %v, want cap %v", got, bossMaxMoveSpeed)
+	}
+}
+
+func TestBossHitboxInsetForLevel(t *testing.T) {
+	if got := BossHitboxInsetForLevel(1); got != bossBaseHitboxInset {
+		t.Errorf("BossHitboxInsetForLevel(1) = %v, want %v", got, bossBaseHitboxInset)
+	}
+	l5 := BossHitboxInsetForLevel(5)
+	want5 := bossBaseHitboxInset + 4*bossHitboxInsetPerLvl
+	if l5 != want5 {
+		t.Errorf("BossHitboxInsetForLevel(5) = %v, want %v", l5, want5)
+	}
+	if BossHitboxInsetForLevel(1) >= BossHitboxInsetForLevel(5) {
+		t.Error("expected higher level to have larger hitbox inset")
+	}
+	if got := BossHitboxInsetForLevel(100); got != bossMaxHitboxInset {
+		t.Errorf("BossHitboxInsetForLevel(100) = %v, want cap %v", got, bossMaxHitboxInset)
+	}
+}
+
+func TestBossFightResetScalesWithLevel(t *testing.T) {
+	bf := NewBossFight()
+	bf.Reset(1)
+	speed1 := bf.boss.baseSpeedY
+	inset1 := bf.boss.hitboxInset
+
+	bf.Reset(5)
+	if bf.boss.baseSpeedY <= speed1 {
+		t.Errorf("level 5 speed %v should exceed level 1 speed %v", bf.boss.baseSpeedY, speed1)
+	}
+	if bf.boss.hitboxInset <= inset1 {
+		t.Errorf("level 5 inset %v should exceed level 1 inset %v", bf.boss.hitboxInset, inset1)
+	}
+	wantHits := BossHitsForLevel(5)
+	wantThrows := BossThrowsForLevel(5)
+	if bf.hitsRequired != wantHits || bf.throwsAllowed != wantThrows {
+		t.Errorf("hits/throws = %d/%d, want %d/%d", bf.hitsRequired, bf.throwsAllowed, wantHits, wantThrows)
 	}
 }

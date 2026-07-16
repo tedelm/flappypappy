@@ -19,6 +19,8 @@ type PipeManager struct {
 	pipeSpeed     float64
 	pipeGap       float64
 	spawnInterval int
+	spawned       int
+	spawnLimit    int
 }
 
 func NewPipeManager() *PipeManager {
@@ -33,8 +35,13 @@ func (pm *PipeManager) ApplyConfig(cfg DifficultyConfig) {
 	pm.spawnInterval = cfg.SpawnInterval
 }
 
+func (pm *PipeManager) SetSpawnLimit(n int) {
+	pm.spawnLimit = n
+}
+
 func (pm *PipeManager) Reset() {
 	pm.pipes = nil
+	pm.spawned = 0
 	pm.spawnTimer = pm.spawnInterval / 2
 }
 
@@ -48,16 +55,27 @@ func (pm *PipeManager) spawn() {
 		GapY: gapY,
 		GapH: pm.pipeGap,
 	})
+	pm.spawned++
 }
 
 func (pm *PipeManager) Speed() float64 {
 	return pm.pipeSpeed
 }
 
+func (pm *PipeManager) Spawned() int {
+	return pm.spawned
+}
+
+func (pm *PipeManager) Pipes() []*Pipe {
+	return pm.pipes
+}
+
 func (pm *PipeManager) Update() {
 	pm.spawnTimer--
 	if pm.spawnTimer <= 0 {
-		pm.spawn()
+		if pm.spawnLimit <= 0 || pm.spawned < pm.spawnLimit {
+			pm.spawn()
+		}
 		pm.spawnTimer = pm.spawnInterval
 	}
 
@@ -81,6 +99,37 @@ func (pm *PipeManager) CheckScore(birdX float64) int {
 		}
 	}
 	return scoreDelta
+}
+
+// LastDadFullyCleared reports whether the bird has passed the right edge of every
+// on-screen pipe (used to gate boss entry after the final dad is scored).
+func (pm *PipeManager) LastDadFullyCleared(birdX float64) bool {
+	for _, p := range pm.pipes {
+		if birdX <= p.X+PipeWidth {
+			return false
+		}
+	}
+	return true
+}
+
+// ResetBeforeLastDad clears pipes and places one unscored dad ahead of the bird
+// for a final-dad retry. spawnLimit should already be set to the level target.
+func (pm *PipeManager) ResetBeforeLastDad() {
+	minGapY := 80.0
+	maxGapY := float64(FloorSurfaceY) - pm.pipeGap - 80
+	gapY := minGapY + rand.Float64()*(maxGapY-minGapY)
+
+	pm.pipes = []*Pipe{{
+		X:    float64(ScreenW),
+		GapY: gapY,
+		GapH: pm.pipeGap,
+	}}
+	if pm.spawnLimit > 0 {
+		pm.spawned = pm.spawnLimit
+	} else {
+		pm.spawned = 1
+	}
+	pm.spawnTimer = pm.spawnInterval
 }
 
 func (pm *PipeManager) Collides(bx, by, bw, bh float64) bool {
