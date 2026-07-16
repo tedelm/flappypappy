@@ -57,6 +57,7 @@ const (
 	continueBtnW        = 160
 	continueBtnH        = 40
 	continueBtnY        = ScreenH/2 + 24
+	meetBossBtnW        = 280
 	saveBtnW            = 160
 	saveBtnH            = 40
 	backBtnW            = 160
@@ -72,6 +73,13 @@ const (
 	highScoresLinkY     = ScreenH/2 + 170
 	highScoresLinkPadX  = 12
 	highScoresLinkPadY  = 8
+	highScoreTableY     = 118
+	highScoreRowH       = 26
+	highScoreColPlace   = 18
+	highScoreColName    = 52
+	highScoreColLevel   = 168
+	highScoreColScore   = 228
+	highScoreColDiff    = 318
 	loadTimeoutFrames   = 600
 )
 
@@ -103,7 +111,9 @@ type State int
 const (
 	StateLoading State = iota
 	StateReady
+	StateLevelIntro
 	StatePlaying
+	StateBossIntro
 	StateBossFight
 	StateLevelComplete
 	StateContinue
@@ -121,8 +131,11 @@ type Game struct {
 	rawScore            int
 	level               int
 	levelDadsPassed     int
+	finalDadAttempt     bool
+	bossContinue        bool
 	difficulty          Difficulty
 	lives               int
+	livesMax            int
 	invincibleFrames    int
 	playerName          string
 	highScores          *HighScores
@@ -133,14 +146,20 @@ type Game struct {
 	bossFight           *BossFight
 	frames              int
 	touchIDs            []ebiten.TouchID
+	throwCharging       bool
+	throwChargeFrames   int
+	throwChargeTouch    ebiten.TouchID
+	throwChargeHasTouch bool
 	nameInputOpen       bool
 	music               *sound.Manager
-	musicMenu           bool
+	musicMode           sound.MusicMode
+	musicModeSet        bool
 	loadStarted         bool
 	loadTextSet         bool
 	loadFrames          int
 	loadDone            chan loadResult
 	loadingScreenHidden bool
+	continueText        string
 }
 
 func New() *Game {
@@ -151,6 +170,7 @@ func New() *Game {
 		pipes:      NewPipeManager(),
 		bossFight:  NewBossFight(),
 		highScores: NewHighScores(InitScoreStore()),
+		livesMax:   MaxLives,
 		loadDone:   make(chan loadResult, 1),
 	}
 }
@@ -166,8 +186,11 @@ func (g *Game) reset() {
 	g.rawScore = 0
 	g.level = 0
 	g.levelDadsPassed = 0
+	g.finalDadAttempt = false
+	g.bossContinue = false
 	g.frames = 0
 	g.lives = 0
+	g.livesMax = MaxLives
 	g.invincibleFrames = 0
 	g.playerName = ""
 	g.bgScrollX = 0
@@ -184,32 +207,142 @@ func (g *Game) startGame() {
 	g.pipes.Reset()
 	g.level = 1
 	g.levelDadsPassed = 0
+	g.finalDadAttempt = false
+	g.bossContinue = false
+	g.pipes.SetSpawnLimit(DadsRequiredForLevel(g.level))
 	g.rawScore = 0
 	g.lives = MaxLives
+	g.livesMax = MaxLives
 	g.invincibleFrames = 0
 	g.playerName = ""
 	g.bgScrollX = 0
 	g.decorSeed = rand.Int()
+	g.state = StateLevelIntro
+}
+
+func (g *Game) beginPlaying() {
 	g.state = StatePlaying
 	g.flap()
+}
+
+func (g *Game) enterBossIntro() {
+	g.state = StateBossIntro
 }
 
 func (g *Game) enterBossFight() {
 	g.pipes.Reset()
-	g.bossFight.Reset()
+	g.bossFight.Reset(g.level)
+	g.clearThrowCharge()
+	g.bossContinue = false
 	g.state = StateBossFight
 }
 
+func (g *Game) clearThrowCharge() {
+	g.throwCharging = false
+	g.throwChargeFrames = 0
+	g.throwChargeHasTouch = false
+}
+
+func (g *Game) throwChargePower() float64 {
+	if !g.throwCharging {
+		return 0
+	}
+	return ThrowPower(g.throwChargeFrames)
+}
+
+// updateThrowCharge handles hold-to-charge for boss throws.
+// Returns true and power when the player releases a throw.
+func (g *Game) updateThrowCharge() (released bool, power float64) {
+	if !g.bossFight.CanThrow() {
+		g.clearThrowCharge()
+		return false, 0
+	}
+
+	if !g.throwCharging {
+		if inpututil.IsKeyJustPressed(ebiten.KeySpace) ||
+			inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
+			g.throwCharging = true
+			g.throwChargeFrames = 0
+			g.throwChargeHasTouch = false
+			return false, 0
+		}
+		g.touchIDs = inpututil.AppendJustPressedTouchIDs(g.touchIDs[:0])
+		if len(g.touchIDs) > 0 {
+			g.throwCharging = true
+			g.throwChargeFrames = 0
+			g.throwChargeTouch = g.touchIDs[0]
+			g.throwChargeHasTouch = true
+		}
+		return false, 0
+	}
+
+	held := false
+	if g.throwChargeHasTouch {
+		g.touchIDs = ebiten.AppendTouchIDs(g.touchIDs[:0])
+		for _, id := range g.touchIDs {
+			if id == g.throwChargeTouch {
+				held = true
+				break
+			}
+		}
+	} else {
+		held = ebiten.IsKeyPressed(ebiten.KeySpace) || ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft)
+	}
+
+	if held {
+		if g.throwChargeFrames < ThrowChargeMaxFrames() {
+			g.throwChargeFrames++
+		}
+		return false, 0
+	}
+
+	power = ThrowPower(g.throwChargeFrames)
+	g.clearThrowCharge()
+	return true, power
+}
+
 func (g *Game) advanceToNextLevel() {
+	oldLives, oldLivesMax := g.lives, g.livesMax
+	g.lives, g.livesMax = awardLevelCompleteLife(g.lives, g.livesMax)
+	if g.music != nil && (g.lives > oldLives || g.livesMax > oldLivesMax) {
+		g.music.PlayPowerUp()
+	}
 	g.level++
 	g.levelDadsPassed = 0
+	g.finalDadAttempt = false
 	g.bird.Reset()
 	g.pipes.Reset()
+	g.pipes.SetSpawnLimit(DadsRequiredForLevel(g.level))
 	g.state = StatePlaying
 	g.flap()
 }
 
+func awardLevelCompleteLife(lives, livesMax int) (newLives, newLivesMax int) {
+	// If the player still has missing hearts, they gain one without changing the max.
+	if lives < livesMax {
+		return lives + 1, livesMax
+	}
+
+	// Otherwise, they're full. Increase max lives and fill to it, until the cap.
+	if livesMax < MaxLivesCap {
+		return livesMax + 1, livesMax + 1
+	}
+
+	return lives, livesMax
+}
+
 func (g *Game) bossGameOver() {
+	g.clearThrowCharge()
+	if g.music != nil {
+		g.music.PlayLifeLost()
+	}
+	g.lives--
+	if g.lives > 0 {
+		g.bossContinue = true
+		g.continueText = randomText()
+		g.state = StateContinue
+		return
+	}
 	if g.music != nil {
 		g.music.PlayGameOver()
 	}
@@ -229,8 +362,11 @@ func (g *Game) loseLife() {
 	if g.music != nil {
 		g.music.PlayLifeLost()
 	}
+	target := DadsRequiredForLevel(g.level)
+	g.finalDadAttempt = g.levelDadsPassed >= target-1
 	g.lives--
 	if g.lives > 0 {
+		g.continueText = randomText()
 		g.state = StateContinue
 	} else {
 		if g.music != nil {
@@ -243,6 +379,27 @@ func (g *Game) loseLife() {
 }
 
 func (g *Game) continueGame() {
+	if g.bossContinue {
+		if g.rawScore >= g.levelDadsPassed {
+			g.rawScore -= g.levelDadsPassed
+		} else {
+			g.rawScore = 0
+		}
+		g.levelDadsPassed = 0
+		g.finalDadAttempt = false
+		g.bossContinue = false
+		g.pipes.Reset()
+		g.pipes.SetSpawnLimit(DadsRequiredForLevel(g.level))
+	} else if g.finalDadAttempt {
+		target := DadsRequiredForLevel(g.level)
+		if g.levelDadsPassed >= target && g.rawScore > 0 {
+			g.rawScore--
+		}
+		g.levelDadsPassed = target - 1
+		g.pipes.SetSpawnLimit(target)
+		g.pipes.ResetBeforeLastDad()
+		g.finalDadAttempt = false
+	}
 	g.bird.Reset()
 	g.flap()
 	g.invincibleFrames = LifeInvincibleTicks
@@ -251,7 +408,7 @@ func (g *Game) continueGame() {
 
 func (g *Game) submitHighScore() {
 	SyncNameInput(&g.playerName)
-	g.highScores.Add(g.playerName, g.displayScore(), g.difficulty)
+	g.highScores.Add(g.playerName, g.displayScore(), g.difficulty, g.level)
 	g.reset()
 }
 
@@ -307,6 +464,10 @@ func (g *Game) readyStartInputAt(px, py float64) bool {
 	return pointInRect(px, py, gx, gy, gw, gh)
 }
 
+func (g *Game) inBossScene() bool {
+	return g.state == StateBossIntro || g.state == StateBossFight
+}
+
 func continueButtonBounds() (x, y, w, h float64) {
 	return (ScreenW - continueBtnW) / 2, continueBtnY, continueBtnW, continueBtnH
 }
@@ -331,6 +492,10 @@ func nameFieldBounds() (x, y, w, h float64) {
 	return (ScreenW - nameFieldW) / 2, nameFieldY, nameFieldW, nameFieldH
 }
 
+func meetBossButtonBounds() (x, y, w, h float64) {
+	return (ScreenW - meetBossBtnW) / 2, continueBtnY, meetBossBtnW, continueBtnH
+}
+
 func (g *Game) continueInput() bool {
 	if inpututil.IsKeyJustPressed(ebiten.KeySpace) {
 		return true
@@ -343,7 +508,23 @@ func (g *Game) continueInput() bool {
 	return pointInRect(px, py, x, y, w, h)
 }
 
+func (g *Game) meetBossInput() bool {
+	if inpututil.IsKeyJustPressed(ebiten.KeySpace) {
+		return true
+	}
+	px, py, ok := g.readyPointerJustPressed()
+	if !ok {
+		return false
+	}
+	x, y, w, h := meetBossButtonBounds()
+	return pointInRect(px, py, x, y, w, h)
+}
+
 func (g *Game) levelCompleteInput() bool {
+	return g.continueInput()
+}
+
+func (g *Game) levelIntroInput() bool {
 	return g.continueInput()
 }
 
@@ -456,6 +637,11 @@ func (g *Game) Update() error {
 			g.cycleDifficultyNext()
 		}
 
+	case StateLevelIntro:
+		if g.levelIntroInput() {
+			g.beginPlaying()
+		}
+
 	case StatePlaying:
 		g.bird.Update()
 		g.pipes.Update()
@@ -468,9 +654,6 @@ func (g *Game) Update() error {
 					g.music.PlayPassDad()
 				}
 			}
-			if g.levelDadsPassed >= DadsRequiredForLevel(g.level) {
-				g.enterBossFight()
-			}
 		}
 
 		if g.invincibleFrames > 0 {
@@ -482,21 +665,42 @@ func (g *Game) Update() error {
 			}
 		}
 
+		if g.state == StatePlaying {
+			target := DadsRequiredForLevel(g.level)
+			if g.levelDadsPassed >= target && g.pipes.LastDadFullyCleared(g.bird.X) {
+				g.enterBossIntro()
+			}
+		}
+
 		if g.flapInput() {
 			g.flap()
 		}
 
+	case StateBossIntro:
+		if g.meetBossInput() {
+			g.enterBossFight()
+		}
+
 	case StateBossFight:
 		won, lost := g.bossFight.Update()
+		if g.bossFight.ConsumeHitSFX() && g.music != nil {
+			g.music.PlayGlassBreak()
+			g.music.PlayWrongWithYou()
+		}
+		if g.bossFight.ConsumeExplodeSFX() && g.music != nil {
+			g.music.PlayPlayerWin()
+		}
 		if won {
+			g.clearThrowCharge()
 			g.state = StateLevelComplete
 		} else if lost {
+			g.clearThrowCharge()
 			g.bossGameOver()
-		} else if g.flapInput() {
+		} else if released, power := g.updateThrowCharge(); released {
 			if g.bossFight.CanThrow() {
-				g.bossFight.Throw()
+				g.bossFight.Throw(power)
 				if g.music != nil {
-					g.music.PlayJump()
+					g.music.PlayOuch()
 				}
 			}
 		}
@@ -543,12 +747,21 @@ func (g *Game) syncMusicForState() {
 	if g.music == nil {
 		return
 	}
-	menu := g.state == StateReady || g.state == StateEnterName || g.state == StateHighScores
-	if menu == g.musicMenu {
+	var mode sound.MusicMode
+	switch {
+	case g.state == StateReady || g.state == StateEnterName || g.state == StateHighScores:
+		mode = sound.MusicMenu
+	case g.inBossScene():
+		mode = sound.MusicBoss
+	default:
+		mode = sound.MusicGame
+	}
+	if g.musicModeSet && mode == g.musicMode {
 		return
 	}
-	g.music.SetMode(menu)
-	g.musicMenu = menu
+	g.music.SetMode(mode)
+	g.musicMode = mode
+	g.musicModeSet = true
 }
 
 func (g *Game) hitBounds(bx, by, bw, bh float64) bool {
@@ -564,10 +777,14 @@ func sinBob(frame int) float64 {
 }
 
 func (g *Game) Draw(screen *ebiten.Image) {
-	drawPubBackground(screen, g.bgScrollX, g.decorSeed)
+	if g.inBossScene() {
+		drawBossBackground(screen)
+	} else {
+		drawPubBackground(screen, g.bgScrollX, g.decorSeed, WallpaperIndex(g.level), g.level)
+	}
 
 	showPipes := g.state == StatePlaying || g.state == StateContinue
-	if g.state != StateLoading {
+	if g.state != StateLoading && !g.inBossScene() {
 		if showPipes {
 			g.pipes.DrawLamps(screen)
 		}
@@ -599,11 +816,21 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	case StateHighScores:
 		drawHighScoresScreen(screen, g.highScores)
 
+	case StateLevelIntro:
+		g.bird.Draw(screen)
+		drawGameplayHUD(screen, g)
+		drawLevelIntroPrompt(screen)
+
+	case StateBossIntro:
+		g.bird.Draw(screen)
+		drawGameplayHUD(screen, g)
+		drawBossIntroPrompt(screen)
+
 	case StateBossFight:
-		drawBossPlayer(screen)
+		drawBossPlayer(screen, g.throwChargePower())
 		g.bossFight.Draw(screen)
 		drawGameplayHUD(screen, g)
-		drawBossHUD(screen, g.bossFight)
+		drawBossHUD(screen, g.bossFight, g.throwChargePower(), g.throwCharging)
 
 	case StateLevelComplete:
 		g.bird.Draw(screen)
@@ -612,9 +839,10 @@ func (g *Game) Draw(screen *ebiten.Image) {
 
 	default:
 		g.bird.Draw(screen)
+
 		switch g.state {
 		case StateContinue:
-			drawContinuePrompt(screen)
+			drawContinuePrompt(screen, g.continueText)
 		case StateEnterName:
 			drawEnterNameScreen(screen, g)
 		}
@@ -660,36 +888,59 @@ func drawDifficultySelector(screen *ebiten.Image, selected Difficulty) {
 }
 
 func drawLabel(screen *ebiten.Image, str string, centerX, y float64, col color.Color) {
-	op := &text.DrawOptions{}
-	op.PrimaryAlign = text.AlignCenter
-	op.SecondaryAlign = text.AlignStart
-	op.GeoM.Translate(centerX, y)
-	op.ColorScale.ScaleWithColor(col)
-	text.Draw(screen, str, labelFace, op)
+	drawOutlinedText(screen, str, labelFace, centerX, y, text.AlignCenter, col)
 }
 
 func drawLabelLeft(screen *ebiten.Image, str string, leftX, y float64, col color.Color) {
-	op := &text.DrawOptions{}
-	op.PrimaryAlign = text.AlignStart
-	op.SecondaryAlign = text.AlignStart
-	op.GeoM.Translate(leftX, y)
-	op.ColorScale.ScaleWithColor(col)
-	text.Draw(screen, str, labelFace, op)
+	drawOutlinedText(screen, str, labelFace, leftX, y, text.AlignStart, col)
 }
 
-func drawLifeHUD(screen *ebiten.Image, lives int) {
+func drawOutlinedText(screen *ebiten.Image, str string, face *text.GoTextFace, x, y float64, align text.Align, col color.Color) {
+	const outline = 2
+	for dy := -outline; dy <= outline; dy++ {
+		for dx := -outline; dx <= outline; dx++ {
+			if dx == 0 && dy == 0 {
+				continue
+			}
+			op := &text.DrawOptions{}
+			op.PrimaryAlign = align
+			op.SecondaryAlign = text.AlignStart
+			op.GeoM.Translate(x+float64(dx), y+float64(dy))
+			op.ColorScale.ScaleWithColor(ColorTextOutline)
+			text.Draw(screen, str, face, op)
+		}
+	}
+	op := &text.DrawOptions{}
+	op.PrimaryAlign = align
+	op.SecondaryAlign = text.AlignStart
+	op.GeoM.Translate(x, y)
+	op.ColorScale.ScaleWithColor(col)
+	text.Draw(screen, str, face, op)
+}
+
+func drawLifeHUD(screen *ebiten.Image, lives, livesMax int) {
+	drawGlassRow(screen, lives, livesMax, false)
+}
+
+func drawGlassRow(screen *ebiten.Image, filled, total int, centered bool) {
+	if total <= 0 {
+		return
+	}
 	full := sprite.LifeFull()
 	empty := sprite.LifeEmpty()
 	scale := float64(LifeGlassW) / float64(sprite.LifeFrameWidth())
 
-	totalW := LifeGlassW*MaxLives + LifeGlassGap*(MaxLives-1)
+	totalW := LifeGlassW*total + LifeGlassGap*(total-1)
 	baseX := ScreenW - LifeHUDMargin - totalW
+	if centered {
+		baseX = (ScreenW - totalW) / 2
+	}
 	scaledH := int(float64(full.Bounds().Dy()) * scale)
 	baseY := ScreenH - GroundHeight + (GroundHeight-scaledH)/2
 
-	for i := 0; i < MaxLives; i++ {
+	for i := 0; i < total; i++ {
 		img := full
-		if i >= lives {
+		if i >= filled {
 			img = empty
 		}
 		x := baseX + i*(LifeGlassW+LifeGlassGap)
@@ -707,16 +958,167 @@ func drawPubButton(screen *ebiten.Image, label string, x, y, w, h float64) {
 }
 
 func drawGameplayHUD(screen *ebiten.Image, g *Game) {
-	drawLabel(screen, fmt.Sprintf("%d", g.displayScore()), ScreenW/2, 20, ColorText)
+	if !g.inBossScene() {
+		drawLabel(screen, fmt.Sprintf("%d", g.displayScore()), ScreenW/2, 20, ColorText)
+		target := DadsRequiredForLevel(g.level)
+		drawLabel(screen, fmt.Sprintf("%d/%d", g.levelDadsPassed, target), ScreenW/2, 44, ColorTextMuted)
+		drawLifeHUD(screen, g.lives, g.livesMax)
+	}
 	drawLabelLeft(screen, fmt.Sprintf("Level %d", g.level), LifeHUDMargin, 20, ColorText)
-	target := DadsRequiredForLevel(g.level)
-	drawLabel(screen, fmt.Sprintf("%d/%d", g.levelDadsPassed, target), ScreenW/2, 44, ColorTextMuted)
-	drawLifeHUD(screen, g.lives)
 }
 
-func drawBossHUD(screen *ebiten.Image, bf *BossFight) {
-	drawLabel(screen, fmt.Sprintf("Hits: %d/%d", bf.hits, BossHitsRequired), ScreenW/2, 68, ColorText)
-	drawLabel(screen, fmt.Sprintf("Throws: %d/%d", bf.throwsUsed, BossThrowsAllowed), ScreenW/2, 92, ColorTextMuted)
+func drawBossHUD(screen *ebiten.Image, bf *BossFight, chargePower float64, charging bool) {
+	const (
+		bossHudBarW = 220.0
+		bossHudBarH = 12.0
+		lifeBarY    = 72.0
+		labelY      = 52.0
+		hintY       = float64(FloorSurfaceY) - 130
+		chargeBarY  = float64(FloorSurfaceY) - 80
+	)
+
+	drawLabel(screen, "Boss", ScreenW/2, labelY, ColorTextMuted)
+
+	barX := float64(ScreenW)/2 - bossHudBarW/2
+	vector.DrawFilledRect(screen, float32(barX), float32(lifeBarY), float32(bossHudBarW), float32(bossHudBarH), ColorGlassEdge, true)
+	vector.StrokeRect(screen, float32(barX), float32(lifeBarY), float32(bossHudBarW), float32(bossHudBarH), 2, ColorKegEdge, true)
+
+	remain := float64(bf.hitsRequired - bf.hits)
+	if remain < 0 {
+		remain = 0
+	}
+	frac := 0.0
+	if bf.hitsRequired > 0 {
+		frac = remain / float64(bf.hitsRequired)
+	}
+	if frac > 0 {
+		fillW := bossHudBarW * frac
+		col := ColorBeer
+		if frac <= 0.35 {
+			col = color.RGBA{180, 90, 40, 255}
+		}
+		vector.DrawFilledRect(screen, float32(barX), float32(lifeBarY), float32(fillW), float32(bossHudBarH), col, true)
+		vector.StrokeRect(screen, float32(barX), float32(lifeBarY), float32(bossHudBarW), float32(bossHudBarH), 2, ColorKegEdge, true)
+	}
+
+	if !charging {
+		drawLabel(screen, "Hold to throw", ScreenW/2, hintY, ColorTextMuted)
+	}
+	remaining := bf.throwsAllowed - bf.throwsUsed
+	if remaining < 0 {
+		remaining = 0
+	}
+	drawGlassRow(screen, remaining, bf.throwsAllowed, true)
+
+	if chargePower < 0 {
+		chargePower = 0
+	} else if chargePower > 1 {
+		chargePower = 1
+	}
+	vector.DrawFilledRect(screen, float32(barX), float32(chargeBarY), float32(bossHudBarW), float32(bossHudBarH), ColorGlassEdge, true)
+	vector.StrokeRect(screen, float32(barX), float32(chargeBarY), float32(bossHudBarW), float32(bossHudBarH), 2, ColorKegEdge, true)
+	if chargePower > 0 {
+		fillW := bossHudBarW * chargePower
+		col := ColorBeer
+		if chargePower >= 1 {
+			col = ColorFoam
+		}
+		vector.DrawFilledRect(screen, float32(barX), float32(chargeBarY), float32(fillW), float32(bossHudBarH), col, true)
+		if chargePower >= 0.4 {
+			drawChargeFoamBubbles(screen, barX, chargeBarY, fillW, bossHudBarH, chargePower)
+		}
+		vector.StrokeRect(screen, float32(barX), float32(chargeBarY), float32(bossHudBarW), float32(bossHudBarH), 2, ColorKegEdge, true)
+	}
+}
+
+// drawChargeFoamBubbles draws a dense cloudy foam mound over the charged portion of the bar.
+// Height and density scale with power (thickest at 1.0).
+func drawChargeFoamBubbles(screen *ebiten.Image, barX, barY, fillW, barH, power float64) {
+	if fillW < 8 {
+		return
+	}
+	// Ease power from the 0.4 threshold up to 1.0.
+	tPower := (power - 0.4) / 0.6
+	if tPower < 0 {
+		tPower = 0
+	} else if tPower > 1 {
+		tPower = 1
+	}
+	ease := tPower * tPower * (3 - 2*tPower)
+
+	height := 8 + 18*ease        // ~8px at start → ~26px at full
+	bands := 3 + int(2*ease+0.5) // 3..5 vertical bands
+	cols := 8 + int(10*ease+0.5) // 8..18 across
+
+	cx := barX + fillW/2
+	tick := float64(ebiten.Tick())
+
+	// Pass 1: large overlapping foam blobs (cloud body).
+	for band := 0; band < bands; band++ {
+		bandT := float64(band) / float64(bands-1)
+		if bands == 1 {
+			bandT = 0
+		}
+		// Half-ellipse: narrower and higher toward the top.
+		rowHalfW := (fillW * 0.5) * (1 - 0.35*bandT)
+		rowY := barY + barH*0.35 - bandT*height
+		for i := 0; i < cols; i++ {
+			iT := float64(i) / float64(cols-1)
+			if cols == 1 {
+				iT = 0.5
+			}
+			phase := tick*0.11 + float64(band)*1.3 + float64(i)*0.9
+			ox := (iT - 0.5) * 2 * rowHalfW
+			ox += math.Sin(phase)*3.5 + math.Cos(phase*0.7+float64(band))*2
+			oy := math.Sin(phase*1.4+float64(band)) * 2.2
+			bx := cx + ox
+			by := rowY + oy
+			// Keep blobs over the filled span.
+			if bx < barX-2 || bx > barX+fillW+2 {
+				continue
+			}
+			r := 3.2 + 3.8*(1-bandT)*ease + 1.2*math.Sin(phase+float64(i)*0.4)
+			if r < 2.5 {
+				r = 2.5
+			}
+			vector.DrawFilledCircle(screen, float32(bx), float32(by), float32(r), ColorFoam, true)
+			// Soft secondary blob for cloudiness.
+			vector.DrawFilledCircle(screen, float32(bx+r*0.35), float32(by-r*0.2), float32(r*0.65), ColorFoam, true)
+		}
+	}
+
+	// Pass 2: smaller bubble accents nested in the foam.
+	bubbleCount := 10 + int(16*ease)
+	for i := 0; i < bubbleCount; i++ {
+		phase := tick*0.15 + float64(i)*1.1
+		iT := float64(i) / float64(bubbleCount)
+		ox := (iT - 0.5) * fillW * (0.85 + 0.1*math.Sin(phase))
+		oy := -2 - (0.3+0.7*((math.Sin(phase*0.8)+1)*0.5))*height*ease
+		bx := cx + ox + math.Cos(phase)*4
+		by := barY + barH*0.3 + oy
+		if bx < barX || bx > barX+fillW {
+			continue
+		}
+		r := float32(1.4 + 1.6*math.Sin(phase*1.3+float64(i)))
+		if r < 1.2 {
+			r = 1.2
+		}
+		vector.DrawFilledCircle(screen, float32(bx), float32(by), r, ColorBubble, true)
+	}
+
+	// Pass 3: fill the bar body with soft foam so the head connects to the track.
+	bodyCols := 6 + int(8*ease)
+	for i := 0; i < bodyCols; i++ {
+		phase := tick*0.09 + float64(i)*1.4
+		iT := float64(i) / float64(bodyCols-1)
+		if bodyCols == 1 {
+			iT = 0.5
+		}
+		bx := barX + 4 + iT*(fillW-8) + math.Sin(phase)*2
+		by := barY + barH*0.45 + math.Cos(phase*1.2)*2
+		r := float32(3.5 + 2*ease + 0.8*math.Sin(phase))
+		vector.DrawFilledCircle(screen, float32(bx), float32(by), r, ColorFoam, true)
+	}
 }
 
 func drawLevelCompletePrompt(screen *ebiten.Image, g *Game) {
@@ -725,10 +1127,37 @@ func drawLevelCompletePrompt(screen *ebiten.Image, g *Game) {
 	drawPubButton(screen, "CONTINUE", x, y, w, h)
 }
 
-func drawContinuePrompt(screen *ebiten.Image) {
-	drawLabel(screen, "Ah, no! Your beer is a memory now!", ScreenW/2, continueBtnY-28, ColorText)
+func randomText() string {
+	randomTexts := []string{
+		"Ah, no! You dropped your beer!",
+		"You're drunk! You can't play this game!",
+		"Ah, no! You knocked over your beer!",
+		"Go home and sleep it off!",
+	}
+	return randomTexts[rand.Intn(len(randomTexts))]
+}
+
+func drawContinuePrompt(screen *ebiten.Image, text string) {
+
+	drawLabel(screen, text, ScreenW/2, continueBtnY-28, ColorText)
 	x, y, w, h := continueButtonBounds()
 	drawPubButton(screen, "CONTINUE", x, y, w, h)
+}
+
+func drawBossIntroPrompt(screen *ebiten.Image) {
+	drawLabel(screen, "Your best pal's wife is on her way", ScreenW/2, continueBtnY-72, ColorText)
+	drawLabel(screen, "to drag him home from the pub,", ScreenW/2, continueBtnY-50, ColorText)
+	drawLabel(screen, "you got to stop her!", ScreenW/2, continueBtnY-28, ColorText)
+	x, y, w, h := meetBossButtonBounds()
+	drawPubButton(screen, "MEET THE LADY BOSS!", x, y, w, h)
+}
+
+func drawLevelIntroPrompt(screen *ebiten.Image) {
+	drawLabel(screen, "You are at the pub with your pals.", ScreenW/2, continueBtnY-72, ColorText)
+	drawLabel(screen, "Avoid the neighbouring PappaPub guys", ScreenW/2, continueBtnY-50, ColorText)
+	drawLabel(screen, "standing by the bar", ScreenW/2, continueBtnY-28, ColorText)
+	x, y, w, h := continueButtonBounds()
+	drawPubButton(screen, "LET'S GO!", x, y, w, h)
 }
 
 func drawHighScoresLink(screen *ebiten.Image) {
@@ -771,9 +1200,20 @@ func drawHighScoresScreen(screen *ebiten.Image, scores *HighScores) {
 		} else if len(entries) == 0 {
 			drawLabel(screen, "No scores yet", ScreenW/2, 180, ColorTextMuted)
 		} else {
+			headerY := float64(highScoreTableY)
+			drawLabelLeft(screen, "#", highScoreColPlace, headerY, ColorTextMuted)
+			drawLabelLeft(screen, "NAME", highScoreColName, headerY, ColorTextMuted)
+			drawLabelLeft(screen, "LVL", highScoreColLevel, headerY, ColorTextMuted)
+			drawLabelLeft(screen, "SCORE", highScoreColScore, headerY, ColorTextMuted)
+			drawLabelLeft(screen, "DIFF", highScoreColDiff, headerY, ColorTextMuted)
+
 			for i, e := range entries {
-				line := fmt.Sprintf("%d. %-8s %d", i+1, e.Name, e.Score)
-				drawLabel(screen, line, ScreenW/2, 140+float64(i)*28, ColorText)
+				y := headerY + float64(highScoreRowH) + float64(i)*float64(highScoreRowH)
+				drawLabelLeft(screen, fmt.Sprintf("%d", i+1), highScoreColPlace, y, ColorText)
+				drawLabelLeft(screen, e.Name, highScoreColName, y, ColorText)
+				drawLabelLeft(screen, fmt.Sprintf("%d", e.Level), highScoreColLevel, y, ColorText)
+				drawLabelLeft(screen, fmt.Sprintf("%d", e.Score), highScoreColScore, y, ColorText)
+				drawLabelLeft(screen, e.Difficulty.Name(), highScoreColDiff, y, ColorText)
 			}
 		}
 	}

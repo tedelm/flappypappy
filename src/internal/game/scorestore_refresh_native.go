@@ -21,11 +21,11 @@ func pollStoreRefresh() ([]HighScoreEntry, bool) {
 	return nil, false
 }
 
-func saveScoreAsync(h *HighScores, store ScoreStore, name string, score int, diff Difficulty) {
+func saveScoreAsync(h *HighScores, store ScoreStore, name string, score int, diff Difficulty, level int) {
 	h.saveWG.Add(1)
 	go func() {
 		defer h.saveWG.Done()
-		if err := store.Save(name, score, diff); err != nil {
+		if err := store.Save(name, score, diff, level); err != nil {
 			log.Printf("highscores: save: %v", err)
 			return
 		}

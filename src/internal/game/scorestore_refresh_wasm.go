@@ -15,8 +15,8 @@ func pollStoreRefresh() ([]HighScoreEntry, bool) {
 	return jsGetScores(), true
 }
 
-func saveScoreAsync(h *HighScores, store ScoreStore, name string, score int, diff Difficulty) {
-	if err := store.Save(name, score, diff); err != nil {
+func saveScoreAsync(h *HighScores, store ScoreStore, name string, score int, diff Difficulty, level int) {
+	if err := store.Save(name, score, diff, level); err != nil {
 		log.Printf("highscores: save: %v", err)
 		return
 	}

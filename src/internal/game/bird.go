@@ -64,13 +64,13 @@ func (b *Bird) tiltAngle() float64 {
 }
 
 func (b *Bird) Draw(screen *ebiten.Image) {
-	cx := b.X
-	cy := b.Y
-	angle := b.tiltAngle()
+	drawBeerGlass(screen, b.X, b.Y, b.Width, b.Height, b.tiltAngle())
+}
 
-	halfH := b.Height / 2
-	topHW := b.Width/2 - 2
-	botHW := b.Width/2 - 6
+func drawBeerGlass(screen *ebiten.Image, cx, cy, width, height, angle float64) {
+	halfH := height / 2
+	topHW := width/2 - 2
+	botHW := width/2 - 6
 	inset := 3.0
 
 	glass := toWorldQuad([4][2]float64{

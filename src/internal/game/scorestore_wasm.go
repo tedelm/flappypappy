@@ -56,8 +56,8 @@ func (jsStore) EnsureSchema() error {
 	return nil
 }
 
-func (jsStore) Save(name string, score int, difficulty Difficulty) error {
-	callJS("flappySaveScore", normalizePlayerName(name), score, difficulty.Name())
+func (jsStore) Save(name string, score int, difficulty Difficulty, level int) error {
+	callJS("flappySaveScore", normalizePlayerName(name), score, difficulty.Name(), level)
 	return nil
 }
 
@@ -92,7 +92,17 @@ func jsGetScores() []HighScoreEntry {
 		row := v.Index(i)
 		name := row.Get("name").String()
 		score := row.Get("score").Int()
-		entries = append(entries, HighScoreEntry{Name: name, Score: score})
+		level := row.Get("level").Int()
+		if level <= 0 {
+			level = 1
+		}
+		difficulty := row.Get("difficulty").String()
+		entries = append(entries, HighScoreEntry{
+			Name:       name,
+			Score:      score,
+			Level:      level,
+			Difficulty: DifficultyFromName(difficulty),
+		})
 	}
 	return entries
 }
