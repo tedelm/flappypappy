@@ -690,12 +690,22 @@ func (g *Game) Update() error {
 		if g.bossFight.ConsumeExplodeSFX() && g.music != nil {
 			g.music.PlayPlayerWin()
 		}
+		if g.bossFight.ConsumeLaughSFX() && g.music != nil {
+			g.music.PlayLaughingRun()
+		}
 		if won {
 			g.clearThrowCharge()
 			g.state = StateLevelComplete
 		} else if lost {
 			g.clearThrowCharge()
 			g.bossGameOver()
+		} else if g.bossFight.IsOutrun() {
+			if !g.bossFight.InCountdown() && g.flapInput() {
+				g.bossFight.Tap()
+				if g.music != nil {
+					g.music.PlayFootstep()
+				}
+			}
 		} else if released, power := g.updateThrowCharge(); released {
 			if g.bossFight.CanThrow() {
 				g.bossFight.Throw(power)
@@ -778,7 +788,11 @@ func sinBob(frame int) float64 {
 
 func (g *Game) Draw(screen *ebiten.Image) {
 	if g.inBossScene() {
-		drawBossBackground(screen)
+		scroll := 0.0
+		if g.state == StateBossFight && g.bossFight.IsOutrun() {
+			scroll = g.bossFight.ScrollX()
+		}
+		drawBossBackground(screen, scroll)
 	} else {
 		drawPubBackground(screen, g.bgScrollX, g.decorSeed, WallpaperIndex(g.level), g.level)
 	}
@@ -824,13 +838,20 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	case StateBossIntro:
 		g.bird.Draw(screen)
 		drawGameplayHUD(screen, g)
-		drawBossIntroPrompt(screen)
+		drawBossIntroPrompt(screen, g.level)
 
 	case StateBossFight:
-		drawBossPlayer(screen, g.throwChargePower())
+		if g.bossFight.IsOutrun() {
+			drawOutrunPlayer(screen, g.bossFight)
+		} else {
+			drawBossPlayer(screen, g.throwChargePower())
+		}
 		g.bossFight.Draw(screen)
 		drawGameplayHUD(screen, g)
 		drawBossHUD(screen, g.bossFight, g.throwChargePower(), g.throwCharging)
+		if g.bossFight.InCountdown() {
+			drawTitle(screen, g.bossFight.CountdownDisplay(), ScreenW/2, float64(ScreenH)/2-40)
+		}
 
 	case StateLevelComplete:
 		g.bird.Draw(screen)
@@ -854,21 +875,11 @@ func (g *Game) Draw(screen *ebiten.Image) {
 }
 
 func drawTitle(screen *ebiten.Image, str string, centerX, y float64) {
-	op := &text.DrawOptions{}
-	op.PrimaryAlign = text.AlignCenter
-	op.SecondaryAlign = text.AlignStart
-	op.GeoM.Translate(centerX, y)
-	op.ColorScale.ScaleWithColor(ColorText)
-	text.Draw(screen, str, titleFace, op)
+	drawOutlinedTextAt(screen, str, titleFace, centerX, y, text.AlignCenter, ColorText, 3)
 }
 
 func drawSubtitle(screen *ebiten.Image, str string, centerX, y float64) {
-	op := &text.DrawOptions{}
-	op.PrimaryAlign = text.AlignCenter
-	op.SecondaryAlign = text.AlignStart
-	op.GeoM.Translate(centerX, y)
-	op.ColorScale.ScaleWithColor(ColorText)
-	text.Draw(screen, str, subtitleFace, op)
+	drawOutlinedText(screen, str, subtitleFace, centerX, y, text.AlignCenter, ColorText)
 }
 
 func drawDifficultySelector(screen *ebiten.Image, selected Difficulty) {
@@ -896,7 +907,10 @@ func drawLabelLeft(screen *ebiten.Image, str string, leftX, y float64, col color
 }
 
 func drawOutlinedText(screen *ebiten.Image, str string, face *text.GoTextFace, x, y float64, align text.Align, col color.Color) {
-	const outline = 2
+	drawOutlinedTextAt(screen, str, face, x, y, align, col, 2)
+}
+
+func drawOutlinedTextAt(screen *ebiten.Image, str string, face *text.GoTextFace, x, y float64, align text.Align, col color.Color, outline int) {
 	for dy := -outline; dy <= outline; dy++ {
 		for dx := -outline; dx <= outline; dx++ {
 			if dx == 0 && dy == 0 {
@@ -982,6 +996,33 @@ func drawBossHUD(screen *ebiten.Image, bf *BossFight, chargePower float64, charg
 	barX := float64(ScreenW)/2 - bossHudBarW/2
 	vector.DrawFilledRect(screen, float32(barX), float32(lifeBarY), float32(bossHudBarW), float32(bossHudBarH), ColorGlassEdge, true)
 	vector.StrokeRect(screen, float32(barX), float32(lifeBarY), float32(bossHudBarW), float32(bossHudBarH), 2, ColorKegEdge, true)
+
+	if bf.IsOutrun() {
+		secs := (bf.TimerRemaining() + 59) / 60
+		if bf.InCountdown() {
+			secs = (bf.outrunDuration + 59) / 60
+			if secs <= 0 {
+				secs = (OutrunDurationFramesForLevel(bf.level) + 59) / 60
+			}
+		}
+		frac := bf.LeadFrac()
+		if frac > 0 {
+			fillW := bossHudBarW * frac
+			col := ColorBeer
+			if frac <= 0.35 {
+				col = color.RGBA{180, 90, 40, 255}
+			}
+			vector.DrawFilledRect(screen, float32(barX), float32(lifeBarY), float32(fillW), float32(bossHudBarH), col, true)
+			vector.StrokeRect(screen, float32(barX), float32(lifeBarY), float32(bossHudBarW), float32(bossHudBarH), 2, ColorKegEdge, true)
+		}
+		timerY := lifeBarY + bossHudBarH + 22
+		drawLabel(screen, fmt.Sprintf("%ds", secs), ScreenW/2, timerY, ColorText)
+		if !bf.InCountdown() {
+			tapFace := &text.GoTextFace{Source: labelFace.Source, Size: 26}
+			drawOutlinedText(screen, "TAP!", tapFace, ScreenW/2, float64(ScreenH)/2, text.AlignCenter, ColorTextMuted)
+		}
+		return
+	}
 
 	remain := float64(bf.hitsRequired - bf.hits)
 	if remain < 0 {
@@ -1144,10 +1185,17 @@ func drawContinuePrompt(screen *ebiten.Image, text string) {
 	drawPubButton(screen, "CONTINUE", x, y, w, h)
 }
 
-func drawBossIntroPrompt(screen *ebiten.Image) {
-	drawLabel(screen, "Your best pal's wife is on her way", ScreenW/2, continueBtnY-72, ColorText)
-	drawLabel(screen, "to drag him home from the pub,", ScreenW/2, continueBtnY-50, ColorText)
-	drawLabel(screen, "you got to stop her!", ScreenW/2, continueBtnY-28, ColorText)
+func drawBossIntroPrompt(screen *ebiten.Image, level int) {
+	if BossIsOutrun(level) {
+		secs := (OutrunDurationFramesForLevel(level) + 59) / 60
+		drawLabel(screen, "Your best pal's wife is chasing you!", ScreenW/2, continueBtnY-72, ColorText)
+		drawLabel(screen, fmt.Sprintf("Outrun her for %d seconds —", secs), ScreenW/2, continueBtnY-50, ColorText)
+		drawLabel(screen, "tap fast!", ScreenW/2, continueBtnY-28, ColorText)
+	} else {
+		drawLabel(screen, "Your best pal's wife is on her way", ScreenW/2, continueBtnY-72, ColorText)
+		drawLabel(screen, "to drag him home from the pub,", ScreenW/2, continueBtnY-50, ColorText)
+		drawLabel(screen, "you got to stop her!", ScreenW/2, continueBtnY-28, ColorText)
+	}
 	x, y, w, h := meetBossButtonBounds()
 	drawPubButton(screen, "MEET THE LADY BOSS!", x, y, w, h)
 }

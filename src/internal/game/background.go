@@ -35,7 +35,7 @@ func drawPubBackground(screen *ebiten.Image, scrollX float64, seed int, wallpape
 	drawPubDecor(screen, scrollX, seed, level)
 }
 
-func drawBossBackground(screen *ebiten.Image) {
+func drawBossBackground(screen *ebiten.Image, scrollX float64) {
 	img := sprite.Boss1BG()
 	bounds := img.Bounds()
 	imgW := float64(bounds.Dx())
@@ -44,13 +44,18 @@ func drawBossBackground(screen *ebiten.Image) {
 	scale := math.Max(float64(ScreenW)/imgW, float64(ScreenH)/imgH)
 	scaledW := imgW * scale
 	scaledH := imgH * scale
-	offsetX := (float64(ScreenW) - scaledW) / 2
 	offsetY := (float64(ScreenH) - scaledH) / 2
 
-	op := &ebiten.DrawImageOptions{}
-	op.GeoM.Scale(scale, scale)
-	op.GeoM.Translate(offsetX, offsetY)
-	screen.DrawImage(img, op)
+	rem := math.Mod(scrollX, scaledW)
+	if rem < 0 {
+		rem += scaledW
+	}
+	for x := -rem; x < float64(ScreenW)+scaledW; x += scaledW {
+		op := &ebiten.DrawImageOptions{}
+		op.GeoM.Scale(scale, scale)
+		op.GeoM.Translate(x, offsetY)
+		screen.DrawImage(img, op)
+	}
 }
 
 func decorHash(seed, worldX int) uint32 {

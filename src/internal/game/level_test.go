@@ -7,12 +7,12 @@ func TestDadsRequiredForLevel(t *testing.T) {
 		level int
 		want  int
 	}{
-		{1, 10},
-		{2, 15},
-		{3, 20},
+		{1, 7},
+		{2, 13},
+		{3, 19},
 		{4, 25},
-		{5, 30},
-		{0, 10},
+		{5, 31},
+		{0, 7},
 	}
 	for _, tt := range tests {
 		if got := DadsRequiredForLevel(tt.level); got != tt.want {
@@ -103,11 +103,11 @@ func TestLevelPaintingPoolVariesByLevel(t *testing.T) {
 }
 
 func TestBossConstants(t *testing.T) {
-	if BossHitsRequired != 5 {
-		t.Errorf("BossHitsRequired = %d, want 5", BossHitsRequired)
+	if BossHitsRequired != 4 {
+		t.Errorf("BossHitsRequired = %d, want 4", BossHitsRequired)
 	}
-	if BossThrowsAllowed != 8 {
-		t.Errorf("BossThrowsAllowed = %d, want 8", BossThrowsAllowed)
+	if BossThrowsAllowed != 10 {
+		t.Errorf("BossThrowsAllowed = %d, want 10", BossThrowsAllowed)
 	}
 }
 
@@ -115,10 +115,10 @@ func TestBossHitsAndThrowsForLevel(t *testing.T) {
 	cases := []struct {
 		level, wantHits, wantThrows int
 	}{
-		{1, 5, 8},
-		{2, 6, 9},
-		{5, 9, 12},
-		{0, 5, 8}, // clamped to level 1
+		{1, 4, 10},
+		{2, 5, 11},
+		{5, 8, 14},
+		{0, 4, 10}, // clamped to level 1
 	}
 	for _, tt := range cases {
 		hits := BossHitsForLevel(tt.level)
