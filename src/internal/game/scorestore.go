@@ -5,7 +5,7 @@ import "strings"
 type ScoreStore interface {
 	Active() bool
 	EnsureSchema() error
-	Save(name string, score int, difficulty Difficulty) error
+	Save(name string, score int, difficulty Difficulty, level int) error
 	Top(limit int) ([]HighScoreEntry, error)
 }
 

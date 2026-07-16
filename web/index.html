@@ -66,6 +66,7 @@
   <script>
     const GAME_W = 400;
     const GAME_H = 600;
+    const VERSION = "1.0.0";
 
     let nameInputVisible = false;
     let nameInputBounds = { x: 0, y: 0, w: 0, h: 0 };
@@ -223,6 +224,7 @@ CREATE TABLE IF NOT EXISTS highscores (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,
   player_name  TEXT    NOT NULL,
   score        INTEGER NOT NULL,
+  level        INTEGER NOT NULL DEFAULT 1,
   difficulty   TEXT    NOT NULL,
   created_at   TEXT    NOT NULL DEFAULT (datetime('now'))
 );`;
@@ -298,6 +300,16 @@ CREATE TABLE IF NOT EXISTS highscores (
           try {
             const db = new Database(conn);
             await db.sql(CREATE_TABLE_SQL);
+            try {
+              await db.sql(
+                "ALTER TABLE highscores ADD COLUMN level INTEGER NOT NULL DEFAULT 1"
+              );
+            } catch (err) {
+              const msg = String(err || "").toLowerCase();
+              if (!msg.includes("duplicate column")) {
+                throw err;
+              }
+            }
             await db.sql(CREATE_INDEX_SQL);
             scoreDB = db;
             return db;
@@ -315,17 +327,18 @@ CREATE TABLE IF NOT EXISTS highscores (
         ensureScoreDB(url).catch((err) => console.error("score db init:", err));
       };
 
-      window.flappySaveScore = function(name, score, difficulty) {
+      window.flappySaveScore = function(name, score, difficulty, level) {
         pendingSaves++;
         (async () => {
           try {
             const db = await ensureScoreDB();
             if (!db) return;
             await db.sql(
-              "INSERT INTO highscores (player_name, score, difficulty) VALUES (?, ?, ?)",
+              "INSERT INTO highscores (player_name, score, difficulty, level) VALUES (?, ?, ?, ?)",
               name,
               score,
-              difficulty
+              difficulty,
+              level
             );
             window.flappyRefreshScores(10);
           } catch (err) {
@@ -346,12 +359,14 @@ CREATE TABLE IF NOT EXISTS highscores (
             return;
           }
           const rows = await db.sql(
-            "SELECT player_name, score FROM highscores ORDER BY score DESC LIMIT ?",
+            "SELECT player_name, score, level, difficulty FROM highscores ORDER BY score DESC, level DESC LIMIT ?",
             limit
           );
           scoresCache = rows.map((row) => ({
             name: row.player_name,
             score: Number(row.score),
+            level: Number(row.level || 1),
+            difficulty: row.difficulty || "EASY",
           }));
         })()
           .catch((err) => {
@@ -435,13 +450,13 @@ CREATE TABLE IF NOT EXISTS highscores (
 
     async function startGame() {
       try {
-        window.flappySetLoadingText("Fetching game...");
+        window.flappySetLoadingText("Fetching game (version " + VERSION + ")...");
         const resp = await fetch("./flappy.wasm");
         if (!resp.ok) {
           throw new Error("HTTP " + resp.status);
         }
         const bytes = await resp.arrayBuffer();
-        window.flappySetLoadingText("Starting engine...");
+        window.flappySetLoadingText("Pouring beer (version " + VERSION + ")...");
         const result = await WebAssembly.instantiate(bytes, go.importObject);
         const run = go.run(result.instance);
         if (run && typeof run.then === "function") {

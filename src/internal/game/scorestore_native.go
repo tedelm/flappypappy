@@ -17,11 +17,13 @@ CREATE TABLE IF NOT EXISTS highscores (
 	id           INTEGER PRIMARY KEY AUTOINCREMENT,
 	player_name  TEXT    NOT NULL,
 	score        INTEGER NOT NULL,
+	level        INTEGER NOT NULL DEFAULT 1,
 	difficulty   TEXT    NOT NULL,
 	created_at   TEXT    NOT NULL DEFAULT (datetime('now'))
 );`
 
 const createIndexSQL = `CREATE INDEX IF NOT EXISTS idx_highscores_score ON highscores(score DESC);`
+const addLevelColumnSQL = `ALTER TABLE highscores ADD COLUMN level INTEGER NOT NULL DEFAULT 1;`
 
 type sqliteCloudStore struct {
 	db *sqlitecloud.SQCloud
@@ -158,22 +160,25 @@ func (s *sqliteCloudStore) EnsureSchema() error {
 	if err := s.db.Execute(createTableSQL); err != nil {
 		return err
 	}
+	if err := s.db.Execute(addLevelColumnSQL); err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
+		return err
+	}
 	return s.db.Execute(createIndexSQL)
 }
 
-func (s *sqliteCloudStore) Save(name string, score int, difficulty Difficulty) error {
+func (s *sqliteCloudStore) Save(name string, score int, difficulty Difficulty, level int) error {
 	name = escapeSQLString(normalizePlayerName(name))
 	diff := escapeSQLString(difficulty.Name())
 	sql := fmt.Sprintf(
-		"INSERT INTO highscores (player_name, score, difficulty) VALUES ('%s', %d, '%s');",
-		name, score, diff,
+		"INSERT INTO highscores (player_name, score, difficulty, level) VALUES ('%s', %d, '%s', %d);",
+		name, score, diff, level,
 	)
 	return s.db.Execute(sql)
 }
 
 func (s *sqliteCloudStore) Top(limit int) ([]HighScoreEntry, error) {
 	result, err := s.db.Select(fmt.Sprintf(
-		"SELECT player_name, score FROM highscores ORDER BY score DESC LIMIT %d;",
+		"SELECT player_name, score, level, difficulty FROM highscores ORDER BY score DESC, level DESC LIMIT %d;",
 		limit,
 	))
 	if err != nil {
@@ -190,7 +195,20 @@ func (s *sqliteCloudStore) Top(limit int) ([]HighScoreEntry, error) {
 		if err != nil {
 			return nil, err
 		}
-		entries = append(entries, HighScoreEntry{Name: name, Score: int(score)})
+		level, err := result.GetInt64Value(r, 2)
+		if err != nil {
+			return nil, err
+		}
+		diffName, err := result.GetStringValue(r, 3)
+		if err != nil {
+			return nil, err
+		}
+		entries = append(entries, HighScoreEntry{
+			Name:       name,
+			Score:      int(score),
+			Level:      int(level),
+			Difficulty: DifficultyFromName(diffName),
+		})
 	}
 	return entries, nil
 }

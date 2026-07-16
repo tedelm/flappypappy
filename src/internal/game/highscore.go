@@ -9,8 +9,10 @@ import (
 )
 
 type HighScoreEntry struct {
-	Name  string
-	Score int
+	Name       string
+	Score      int
+	Level      int
+	Difficulty Difficulty
 }
 
 type HighScores struct {
@@ -98,12 +100,14 @@ func normalizePlayerName(name string) string {
 	return name
 }
 
-func (h *HighScores) Add(name string, score int, diff Difficulty) {
+func (h *HighScores) Add(name string, score int, diff Difficulty, level int) {
 	h.ensureActive()
 
 	entry := HighScoreEntry{
-		Name:  normalizePlayerName(name),
-		Score: score,
+		Name:       normalizePlayerName(name),
+		Score:      score,
+		Level:      level,
+		Difficulty: diff,
 	}
 
 	h.mu.Lock()
@@ -111,14 +115,14 @@ func (h *HighScores) Add(name string, score int, diff Difficulty) {
 	h.mu.Unlock()
 
 	if h.active {
-		saveScoreAsync(h, h.store, entry.Name, entry.Score, diff)
+		saveScoreAsync(h, h.store, entry.Name, entry.Score, diff, entry.Level)
 	}
 }
 
 func (h *HighScores) insertEntry(entry HighScoreEntry) {
 	inserted := false
 	for i, e := range h.entries {
-		if entry.Score > e.Score {
+		if entry.Score > e.Score || (entry.Score == e.Score && entry.Level > e.Level) {
 			h.entries = append(h.entries[:i], append([]HighScoreEntry{entry}, h.entries[i:]...)...)
 			inserted = true
 			break
@@ -189,11 +193,13 @@ func mergeEntries(local, remote []HighScoreEntry) []HighScoreEntry {
 	type entryKey struct {
 		name  string
 		score int
+		level int
+		diff  string
 	}
 	seen := make(map[entryKey]bool, len(local)+len(remote))
 	out := make([]HighScoreEntry, 0, len(local)+len(remote))
 	add := func(e HighScoreEntry) {
-		k := entryKey{e.Name, e.Score}
+		k := entryKey{e.Name, e.Score, e.Level, e.Difficulty.Name()}
 		if seen[k] {
 			return
 		}
@@ -206,7 +212,12 @@ func mergeEntries(local, remote []HighScoreEntry) []HighScoreEntry {
 	for _, e := range remote {
 		add(e)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Score > out[j].Score })
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Score != out[j].Score {
+			return out[i].Score > out[j].Score
+		}
+		return out[i].Level > out[j].Level
+	})
 	if len(out) > MaxHighScores {
 		out = out[:MaxHighScores]
 	}

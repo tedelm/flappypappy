@@ -30,7 +30,19 @@ func (d Difficulty) Config() DifficultyConfig {
 }
 
 func (d Difficulty) Name() string {
+	if int(d) < 0 || int(d) >= len(difficultyNames) {
+		return difficultyNames[DifficultyEasy]
+	}
 	return difficultyNames[d]
+}
+
+func DifficultyFromName(name string) Difficulty {
+	for i, n := range difficultyNames {
+		if n == name {
+			return Difficulty(i)
+		}
+	}
+	return DifficultyEasy
 }
 
 func (d Difficulty) Next() Difficulty {

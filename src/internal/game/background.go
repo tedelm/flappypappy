@@ -11,11 +11,14 @@ import (
 
 const tableHashSalt = 0xABCDEF
 
-func drawPubBackground(screen *ebiten.Image, scrollX float64, seed int) {
+func drawPubBackground(screen *ebiten.Image, scrollX float64, seed int, wallpaperIndex int, level int) {
 	playH := FloorSurfaceY
-	screen.Fill(ColorPubBase)
+	if wallpaperIndex < 0 || wallpaperIndex >= len(WallpaperBaseColors) {
+		wallpaperIndex = 0
+	}
+	screen.Fill(WallpaperBaseColors[wallpaperIndex])
 
-	tile := sprite.PubWall()
+	tile := sprite.PubWall(wallpaperIndex)
 	tileW := tile.Bounds().Dx()
 	tileH := tile.Bounds().Dy()
 	rem := math.Mod(scrollX, float64(tileW))
@@ -29,7 +32,7 @@ func drawPubBackground(screen *ebiten.Image, scrollX float64, seed int) {
 	}
 
 	drawPubPanels(screen, scrollX)
-	drawPubDecor(screen, scrollX, seed)
+	drawPubDecor(screen, scrollX, seed, level)
 }
 
 func decorHash(seed, worldX int) uint32 {
@@ -59,8 +62,14 @@ func frontStoolJitter(seed, worldX int) float64 {
 	return float64(int(h>>8)%16) - 8
 }
 
-func drawPubDecor(screen *ebiten.Image, scrollX float64, seed int) {
-	drawPubPaintings(screen, scrollX, seed)
+func decorPaintingScale(seed, worldX int) float64 {
+	h := decorHash(seed, worldX^0x5343414C)
+	t := float64(h>>16) / float64(^uint32(0)>>16)
+	return DecorPaintingScaleMin + t*(DecorPaintingScaleMax-DecorPaintingScaleMin)
+}
+
+func drawPubDecor(screen *ebiten.Image, scrollX float64, seed int, level int) {
+	drawPubPaintings(screen, scrollX, seed, level)
 	drawPubTableClusters(screen, scrollX, seed)
 }
 
@@ -71,15 +80,22 @@ func decorGridRange(scrollX float64, margin, step int) (start, end int) {
 	return start, end
 }
 
-func drawPubPaintings(screen *ebiten.Image, scrollX float64, seed int) {
+func drawPubPaintings(screen *ebiten.Image, scrollX float64, seed int, level int) {
 	worldStart, worldEnd := decorGridRange(scrollX, DecorChunkMin, DecorChunkMin)
+	pool := LevelPaintingPool(level)
+	if len(pool) == 0 {
+		return
+	}
 
 	for worldX := worldStart; worldX < worldEnd; worldX += DecorChunkMin {
 		if !decorShouldSpawn(seed, worldX) {
 			continue
 		}
 		centerScreenX := float64(worldX) - scrollX
-		drawPubPainting(screen, centerScreenX, float64(DecorPaintingY))
+		centerScreenY := float64(DecorPaintingY) + float64(DecorPaintingY)/2
+		idx := pool[int(decorHash(seed, worldX))%len(pool)]
+		scale := decorPaintingScale(seed, worldX)
+		drawPubPainting(screen, centerScreenX, centerScreenY, float64(DecorPaintingY), idx, scale)
 	}
 }
 
@@ -136,14 +152,14 @@ func drawPubStool(screen *ebiten.Image, x, feetY float64) {
 	screen.DrawImage(img, op)
 }
 
-func drawPubPainting(screen *ebiten.Image, centerX, topY float64) {
-	img := sprite.PubPainting()
-	scale := DecorPaintingScale
+func drawPubPainting(screen *ebiten.Image, centerX, centerY, topY float64, index int, scale float64) {
+	img := sprite.PubPainting(index)
 	scaledW := float64(img.Bounds().Dx()) * scale
+	scaledH := float64(img.Bounds().Dy()) * scale
 	drawX := centerX - scaledW/2
-
+	drawY := centerY - scaledH/2
 	op := &ebiten.DrawImageOptions{}
 	op.GeoM.Scale(scale, scale)
-	op.GeoM.Translate(drawX, topY)
+	op.GeoM.Translate(drawX, drawY)
 	screen.DrawImage(img, op)
 }

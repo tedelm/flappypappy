@@ -72,6 +72,13 @@ const (
 	highScoresLinkY     = ScreenH/2 + 170
 	highScoresLinkPadX  = 12
 	highScoresLinkPadY  = 8
+	highScoreTableY     = 118
+	highScoreRowH       = 26
+	highScoreColPlace   = 18
+	highScoreColName    = 52
+	highScoreColLevel   = 168
+	highScoreColScore   = 228
+	highScoreColDiff    = 318
 	loadTimeoutFrames   = 600
 )
 
@@ -123,6 +130,7 @@ type Game struct {
 	levelDadsPassed     int
 	difficulty          Difficulty
 	lives               int
+	livesMax            int
 	invincibleFrames    int
 	playerName          string
 	highScores          *HighScores
@@ -151,6 +159,7 @@ func New() *Game {
 		pipes:      NewPipeManager(),
 		bossFight:  NewBossFight(),
 		highScores: NewHighScores(InitScoreStore()),
+		livesMax:   MaxLives,
 		loadDone:   make(chan loadResult, 1),
 	}
 }
@@ -168,6 +177,7 @@ func (g *Game) reset() {
 	g.levelDadsPassed = 0
 	g.frames = 0
 	g.lives = 0
+	g.livesMax = MaxLives
 	g.invincibleFrames = 0
 	g.playerName = ""
 	g.bgScrollX = 0
@@ -186,6 +196,7 @@ func (g *Game) startGame() {
 	g.levelDadsPassed = 0
 	g.rawScore = 0
 	g.lives = MaxLives
+	g.livesMax = MaxLives
 	g.invincibleFrames = 0
 	g.playerName = ""
 	g.bgScrollX = 0
@@ -201,12 +212,27 @@ func (g *Game) enterBossFight() {
 }
 
 func (g *Game) advanceToNextLevel() {
+	g.lives, g.livesMax = awardLevelCompleteLife(g.lives, g.livesMax)
 	g.level++
 	g.levelDadsPassed = 0
 	g.bird.Reset()
 	g.pipes.Reset()
 	g.state = StatePlaying
 	g.flap()
+}
+
+func awardLevelCompleteLife(lives, livesMax int) (newLives, newLivesMax int) {
+	// If the player still has missing hearts, they gain one without changing the max.
+	if lives < livesMax {
+		return lives + 1, livesMax
+	}
+
+	// Otherwise, they're full. Increase max lives and fill to it, until the cap.
+	if livesMax < MaxLivesCap {
+		return livesMax + 1, livesMax + 1
+	}
+
+	return lives, livesMax
 }
 
 func (g *Game) bossGameOver() {
@@ -251,7 +277,7 @@ func (g *Game) continueGame() {
 
 func (g *Game) submitHighScore() {
 	SyncNameInput(&g.playerName)
-	g.highScores.Add(g.playerName, g.displayScore(), g.difficulty)
+	g.highScores.Add(g.playerName, g.displayScore(), g.difficulty, g.level)
 	g.reset()
 }
 
@@ -564,7 +590,7 @@ func sinBob(frame int) float64 {
 }
 
 func (g *Game) Draw(screen *ebiten.Image) {
-	drawPubBackground(screen, g.bgScrollX, g.decorSeed)
+	drawPubBackground(screen, g.bgScrollX, g.decorSeed, WallpaperIndex(g.level), g.level)
 
 	showPipes := g.state == StatePlaying || g.state == StateContinue
 	if g.state != StateLoading {
@@ -677,17 +703,17 @@ func drawLabelLeft(screen *ebiten.Image, str string, leftX, y float64, col color
 	text.Draw(screen, str, labelFace, op)
 }
 
-func drawLifeHUD(screen *ebiten.Image, lives int) {
+func drawLifeHUD(screen *ebiten.Image, lives, livesMax int) {
 	full := sprite.LifeFull()
 	empty := sprite.LifeEmpty()
 	scale := float64(LifeGlassW) / float64(sprite.LifeFrameWidth())
 
-	totalW := LifeGlassW*MaxLives + LifeGlassGap*(MaxLives-1)
+	totalW := LifeGlassW*livesMax + LifeGlassGap*(livesMax-1)
 	baseX := ScreenW - LifeHUDMargin - totalW
 	scaledH := int(float64(full.Bounds().Dy()) * scale)
 	baseY := ScreenH - GroundHeight + (GroundHeight-scaledH)/2
 
-	for i := 0; i < MaxLives; i++ {
+	for i := 0; i < livesMax; i++ {
 		img := full
 		if i >= lives {
 			img = empty
@@ -711,7 +737,7 @@ func drawGameplayHUD(screen *ebiten.Image, g *Game) {
 	drawLabelLeft(screen, fmt.Sprintf("Level %d", g.level), LifeHUDMargin, 20, ColorText)
 	target := DadsRequiredForLevel(g.level)
 	drawLabel(screen, fmt.Sprintf("%d/%d", g.levelDadsPassed, target), ScreenW/2, 44, ColorTextMuted)
-	drawLifeHUD(screen, g.lives)
+	drawLifeHUD(screen, g.lives, g.livesMax)
 }
 
 func drawBossHUD(screen *ebiten.Image, bf *BossFight) {
@@ -771,9 +797,20 @@ func drawHighScoresScreen(screen *ebiten.Image, scores *HighScores) {
 		} else if len(entries) == 0 {
 			drawLabel(screen, "No scores yet", ScreenW/2, 180, ColorTextMuted)
 		} else {
+			headerY := float64(highScoreTableY)
+			drawLabelLeft(screen, "#", highScoreColPlace, headerY, ColorTextMuted)
+			drawLabelLeft(screen, "NAME", highScoreColName, headerY, ColorTextMuted)
+			drawLabelLeft(screen, "LVL", highScoreColLevel, headerY, ColorTextMuted)
+			drawLabelLeft(screen, "SCORE", highScoreColScore, headerY, ColorTextMuted)
+			drawLabelLeft(screen, "DIFF", highScoreColDiff, headerY, ColorTextMuted)
+
 			for i, e := range entries {
-				line := fmt.Sprintf("%d. %-8s %d", i+1, e.Name, e.Score)
-				drawLabel(screen, line, ScreenW/2, 140+float64(i)*28, ColorText)
+				y := headerY + float64(highScoreRowH) + float64(i)*float64(highScoreRowH)
+				drawLabelLeft(screen, fmt.Sprintf("%d", i+1), highScoreColPlace, y, ColorText)
+				drawLabelLeft(screen, e.Name, highScoreColName, y, ColorText)
+				drawLabelLeft(screen, fmt.Sprintf("%d", e.Level), highScoreColLevel, y, ColorText)
+				drawLabelLeft(screen, fmt.Sprintf("%d", e.Score), highScoreColScore, y, ColorText)
+				drawLabelLeft(screen, e.Difficulty.Name(), highScoreColDiff, y, ColorText)
 			}
 		}
 	}

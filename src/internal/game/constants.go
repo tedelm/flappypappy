@@ -20,6 +20,7 @@ const (
 	WainscotingHeight = FloorSurfaceY - WainscotingTopY
 
 	MaxLives            = 3
+	MaxLivesCap         = 10
 	LifeInvincibleTicks = 90
 	LifeGlassW          = 24
 	LifeGlassGap        = 6
@@ -38,7 +39,9 @@ const (
 	DecorStoolY           = ScreenH - GroundHeight + DecorStoolBelowGround
 	DecorPaintingY        = 100
 	DecorStoolScale       = 0.120
-	DecorPaintingScale    = 0.200
+	DecorPaintingScale    = 0.350
+	DecorPaintingScaleMin = 0.9
+	DecorPaintingScaleMax = 1.2
 	DecorTableChunkMin    = 280
 	DecorTableChunkJitter = 160
 	DecorTableChance      = 40
@@ -54,8 +57,17 @@ const (
 )
 
 var (
-	ColorSky       = color.RGBA{135, 206, 235, 255}
-	ColorPubBase   = color.RGBA{42, 28, 24, 255}
+	ColorSky     = color.RGBA{135, 206, 235, 255}
+	ColorPubBase = color.RGBA{42, 28, 24, 255}
+
+	WallpaperBaseColors = []color.RGBA{
+		ColorPubBase,      // burgundy
+		{28, 36, 24, 255}, // forest green
+		{24, 28, 42, 255}, // deep navy blue
+		{36, 24, 42, 255}, // royal purple
+		{42, 30, 20, 255}, // burnt rust/orange
+		{24, 38, 38, 255}, // teal
+	}
 	ColorText      = color.RGBA{245, 245, 240, 255}
 	ColorTextMuted = color.RGBA{200, 200, 195, 255}
 	ColorKeg       = color.RGBA{139, 69, 19, 255}
