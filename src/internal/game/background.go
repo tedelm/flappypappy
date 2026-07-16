@@ -88,7 +88,7 @@ func frontStoolJitter(seed, worldX int) float64 {
 func decorPaintingScale(seed, worldX int) float64 {
 	h := decorHash(seed, worldX^0x5343414C)
 	t := float64(h>>16) / float64(^uint32(0)>>16)
-	return DecorPaintingScaleMin + t*(DecorPaintingScaleMax-DecorPaintingScaleMin)
+	return DecorPaintingScale * (DecorPaintingScaleMin + t*(DecorPaintingScaleMax-DecorPaintingScaleMin))
 }
 
 func drawPubDecor(screen *ebiten.Image, scrollX float64, seed int, level int) {

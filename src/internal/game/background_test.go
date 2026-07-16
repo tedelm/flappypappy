@@ -67,11 +67,13 @@ func TestDecorPaintingScaleStable(t *testing.T) {
 }
 
 func TestDecorPaintingScaleInRange(t *testing.T) {
+	min := DecorPaintingScale * DecorPaintingScaleMin
+	max := DecorPaintingScale * DecorPaintingScaleMax
 	for seed := 0; seed < 20; seed++ {
 		for worldX := 0; worldX < 2000; worldX += DecorChunkMin {
 			scale := decorPaintingScale(seed, worldX)
-			if scale < DecorPaintingScaleMin || scale > DecorPaintingScaleMax {
-				t.Fatalf("scale %v out of range [%v, %v] for seed=%d worldX=%d", scale, DecorPaintingScaleMin, DecorPaintingScaleMax, seed, worldX)
+			if scale < min || scale > max {
+				t.Fatalf("scale %v out of range [%v, %v] for seed=%d worldX=%d", scale, min, max, seed, worldX)
 			}
 		}
 	}
