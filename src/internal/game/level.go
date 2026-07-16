@@ -3,8 +3,8 @@ package game
 import "flappy/internal/game/sprite"
 
 const (
-	LevelStartDads     = 7
-	LevelDadsIncrement = 6
+	LevelStartDads     = 7 // 7
+	LevelDadsIncrement = 6 // 6
 
 	BossHitsRequired  = 5
 	BossThrowsAllowed = 8

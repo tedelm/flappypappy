@@ -39,7 +39,7 @@ const (
 	DecorStoolY           = ScreenH - GroundHeight + DecorStoolBelowGround
 	DecorPaintingY        = 100
 	DecorStoolScale       = 0.120
-	DecorPaintingScale    = 0.350
+	DecorPaintingScale    = 0.80
 	DecorPaintingScaleMin = 0.9
 	DecorPaintingScaleMax = 1.2
 	DecorTableChunkMin    = 280
