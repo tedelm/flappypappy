@@ -3,6 +3,7 @@ package sprite
 import (
 	"bytes"
 	_ "embed"
+	"image"
 	"image/png"
 	"sync"
 
@@ -11,31 +12,16 @@ import (
 
 const NumPubWalls = 6
 
-//go:embed pub_wall.png
-var pubWallPNG []byte
+//go:embed pub_wall_sprite.png
+var pubWallSpritePNG []byte
 
-//go:embed pub_wall_2.png
-var pubWall2PNG []byte
-
-//go:embed pub_wall_3.png
-var pubWall3PNG []byte
-
-//go:embed pub_wall_4.png
-var pubWall4PNG []byte
-
-//go:embed pub_wall_5.png
-var pubWall5PNG []byte
-
-//go:embed pub_wall_6.png
-var pubWall6PNG []byte
-
-var pubWallPNGs = [][]byte{
-	pubWallPNG,
-	pubWall2PNG,
-	pubWall3PNG,
-	pubWall4PNG,
-	pubWall5PNG,
-	pubWall6PNG,
+var pubWallRects = []SpriteRect{
+	{0, 0, 128, 128},
+	{128, 0, 128, 128},
+	{256, 0, 128, 128},
+	{384, 0, 128, 128},
+	{512, 0, 128, 128},
+	{640, 0, 128, 128},
 }
 
 var (
@@ -45,15 +31,21 @@ var (
 
 func ensurePubWallsLoaded() {
 	pubWallOnce.Do(func() {
+		img, err := png.Decode(bytes.NewReader(pubWallSpritePNG))
+		if err != nil {
+			panic(err)
+		}
+		sheet := ToRGBA(img)
 		pubWallImages = make([]*ebiten.Image, NumPubWalls)
-		for i, data := range pubWallPNGs {
-			img, err := png.Decode(bytes.NewReader(data))
-			if err != nil {
-				panic(err)
-			}
-			pubWallImages[i] = ebiten.NewImageFromImage(ToRGBA(img))
+		for i, r := range pubWallRects {
+			rect := pubWallImageRect(r)
+			pubWallImages[i] = ebiten.NewImageFromImage(cropRGBA(sheet, rect))
 		}
 	})
+}
+
+func pubWallImageRect(r SpriteRect) image.Rectangle {
+	return image.Rect(r.X, r.Y, r.X+r.W, r.Y+r.H)
 }
 
 func PubWall(index int) *ebiten.Image {

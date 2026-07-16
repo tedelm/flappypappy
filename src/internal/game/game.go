@@ -57,6 +57,7 @@ const (
 	continueBtnW        = 160
 	continueBtnH        = 40
 	continueBtnY        = ScreenH/2 + 24
+	meetBossBtnW        = 220
 	saveBtnW            = 160
 	saveBtnH            = 40
 	backBtnW            = 160
@@ -111,6 +112,7 @@ const (
 	StateLoading State = iota
 	StateReady
 	StatePlaying
+	StateBossIntro
 	StateBossFight
 	StateLevelComplete
 	StateContinue
@@ -143,7 +145,8 @@ type Game struct {
 	touchIDs            []ebiten.TouchID
 	nameInputOpen       bool
 	music               *sound.Manager
-	musicMenu           bool
+	musicMode           sound.MusicMode
+	musicModeSet        bool
 	loadStarted         bool
 	loadTextSet         bool
 	loadFrames          int
@@ -205,6 +208,10 @@ func (g *Game) startGame() {
 	g.flap()
 }
 
+func (g *Game) enterBossIntro() {
+	g.state = StateBossIntro
+}
+
 func (g *Game) enterBossFight() {
 	g.pipes.Reset()
 	g.bossFight.Reset()
@@ -212,7 +219,11 @@ func (g *Game) enterBossFight() {
 }
 
 func (g *Game) advanceToNextLevel() {
+	oldLives, oldLivesMax := g.lives, g.livesMax
 	g.lives, g.livesMax = awardLevelCompleteLife(g.lives, g.livesMax)
+	if g.music != nil && (g.lives > oldLives || g.livesMax > oldLivesMax) {
+		g.music.PlayPowerUp()
+	}
 	g.level++
 	g.levelDadsPassed = 0
 	g.bird.Reset()
@@ -333,6 +344,10 @@ func (g *Game) readyStartInputAt(px, py float64) bool {
 	return pointInRect(px, py, gx, gy, gw, gh)
 }
 
+func (g *Game) inBossScene() bool {
+	return g.state == StateBossIntro || g.state == StateBossFight
+}
+
 func continueButtonBounds() (x, y, w, h float64) {
 	return (ScreenW - continueBtnW) / 2, continueBtnY, continueBtnW, continueBtnH
 }
@@ -357,6 +372,10 @@ func nameFieldBounds() (x, y, w, h float64) {
 	return (ScreenW - nameFieldW) / 2, nameFieldY, nameFieldW, nameFieldH
 }
 
+func meetBossButtonBounds() (x, y, w, h float64) {
+	return (ScreenW - meetBossBtnW) / 2, continueBtnY, meetBossBtnW, continueBtnH
+}
+
 func (g *Game) continueInput() bool {
 	if inpututil.IsKeyJustPressed(ebiten.KeySpace) {
 		return true
@@ -366,6 +385,18 @@ func (g *Game) continueInput() bool {
 		return false
 	}
 	x, y, w, h := continueButtonBounds()
+	return pointInRect(px, py, x, y, w, h)
+}
+
+func (g *Game) meetBossInput() bool {
+	if inpututil.IsKeyJustPressed(ebiten.KeySpace) {
+		return true
+	}
+	px, py, ok := g.readyPointerJustPressed()
+	if !ok {
+		return false
+	}
+	x, y, w, h := meetBossButtonBounds()
 	return pointInRect(px, py, x, y, w, h)
 }
 
@@ -495,7 +526,7 @@ func (g *Game) Update() error {
 				}
 			}
 			if g.levelDadsPassed >= DadsRequiredForLevel(g.level) {
-				g.enterBossFight()
+				g.enterBossIntro()
 			}
 		}
 
@@ -510,6 +541,11 @@ func (g *Game) Update() error {
 
 		if g.flapInput() {
 			g.flap()
+		}
+
+	case StateBossIntro:
+		if g.meetBossInput() {
+			g.enterBossFight()
 		}
 
 	case StateBossFight:
@@ -569,12 +605,21 @@ func (g *Game) syncMusicForState() {
 	if g.music == nil {
 		return
 	}
-	menu := g.state == StateReady || g.state == StateEnterName || g.state == StateHighScores
-	if menu == g.musicMenu {
+	var mode sound.MusicMode
+	switch {
+	case g.state == StateReady || g.state == StateEnterName || g.state == StateHighScores:
+		mode = sound.MusicMenu
+	case g.inBossScene():
+		mode = sound.MusicBoss
+	default:
+		mode = sound.MusicGame
+	}
+	if g.musicModeSet && mode == g.musicMode {
 		return
 	}
-	g.music.SetMode(menu)
-	g.musicMenu = menu
+	g.music.SetMode(mode)
+	g.musicMode = mode
+	g.musicModeSet = true
 }
 
 func (g *Game) hitBounds(bx, by, bw, bh float64) bool {
@@ -590,10 +635,14 @@ func sinBob(frame int) float64 {
 }
 
 func (g *Game) Draw(screen *ebiten.Image) {
-	drawPubBackground(screen, g.bgScrollX, g.decorSeed, WallpaperIndex(g.level), g.level)
+	if g.inBossScene() {
+		drawBossBackground(screen)
+	} else {
+		drawPubBackground(screen, g.bgScrollX, g.decorSeed, WallpaperIndex(g.level), g.level)
+	}
 
 	showPipes := g.state == StatePlaying || g.state == StateContinue
-	if g.state != StateLoading {
+	if g.state != StateLoading && !g.inBossScene() {
 		if showPipes {
 			g.pipes.DrawLamps(screen)
 		}
@@ -624,6 +673,11 @@ func (g *Game) Draw(screen *ebiten.Image) {
 
 	case StateHighScores:
 		drawHighScoresScreen(screen, g.highScores)
+
+	case StateBossIntro:
+		g.bird.Draw(screen)
+		drawGameplayHUD(screen, g)
+		drawBossIntroPrompt(screen)
 
 	case StateBossFight:
 		drawBossPlayer(screen)
@@ -755,6 +809,12 @@ func drawContinuePrompt(screen *ebiten.Image) {
 	drawLabel(screen, "Ah, no! Your beer is a memory now!", ScreenW/2, continueBtnY-28, ColorText)
 	x, y, w, h := continueButtonBounds()
 	drawPubButton(screen, "CONTINUE", x, y, w, h)
+}
+
+func drawBossIntroPrompt(screen *ebiten.Image) {
+	drawLabel(screen, "You've reached the boss!", ScreenW/2, continueBtnY-28, ColorText)
+	x, y, w, h := meetBossButtonBounds()
+	drawPubButton(screen, "MEET THE BOSS", x, y, w, h)
 }
 
 func drawHighScoresLink(screen *ebiten.Image) {

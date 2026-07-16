@@ -11,7 +11,7 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/audio/mp3"
 )
 
-//go:embed game_music.mp3 game_music_menu.mp3 beer_glass_hit.mp3 jump.mp3 laugh.mp3 hey1.mp3 hey2.mp3
+//go:embed game_music.mp3 game_music_menu.mp3 game_music_boss_1.mp3 beer_glass_hit.mp3 jump.mp3 laugh.mp3 hey1.mp3 hey2.mp3 power_up.mp3
 var assets embed.FS
 
 const (
@@ -21,16 +21,27 @@ const (
 	passDadHeyProb = 0.33
 )
 
+type MusicMode int
+
+const (
+	MusicMenu MusicMode = iota
+	MusicGame
+	MusicBoss
+)
+
 type Manager struct {
 	ctx            *audio.Context
 	menuPlayer     *audio.Player
 	gamePlayer     *audio.Player
+	bossPlayer     *audio.Player
 	lifeLostPlayer *audio.Player
 	jumpPlayer     *audio.Player
 	gameOverPlayer *audio.Player
 	hey1Player     *audio.Player
 	hey2Player     *audio.Player
-	menuMode       bool
+	powerUpPlayer  *audio.Player
+	mode           MusicMode
+	modeSet        bool
 }
 
 func NewManager() (*Manager, error) {
@@ -49,10 +60,19 @@ func NewManager() (*Manager, error) {
 	}
 	gamePlayer.SetVolume(musicVolume)
 
+	bossPlayer, err := newLoopPlayer(ctx, "game_music_boss_1.mp3")
+	if err != nil {
+		menuPlayer.Close()
+		gamePlayer.Close()
+		return nil, fmt.Errorf("boss music: %w", err)
+	}
+	bossPlayer.SetVolume(musicVolume)
+
 	lifeLostPlayer, err := newOneShotPlayer(ctx, "beer_glass_hit.mp3")
 	if err != nil {
 		menuPlayer.Close()
 		gamePlayer.Close()
+		bossPlayer.Close()
 		return nil, fmt.Errorf("life lost sfx: %w", err)
 	}
 	lifeLostPlayer.SetVolume(sfxVolume)
@@ -61,6 +81,7 @@ func NewManager() (*Manager, error) {
 	if err != nil {
 		menuPlayer.Close()
 		gamePlayer.Close()
+		bossPlayer.Close()
 		lifeLostPlayer.Close()
 		return nil, fmt.Errorf("jump sfx: %w", err)
 	}
@@ -70,6 +91,7 @@ func NewManager() (*Manager, error) {
 	if err != nil {
 		menuPlayer.Close()
 		gamePlayer.Close()
+		bossPlayer.Close()
 		lifeLostPlayer.Close()
 		jumpPlayer.Close()
 		return nil, fmt.Errorf("game over sfx: %w", err)
@@ -80,6 +102,7 @@ func NewManager() (*Manager, error) {
 	if err != nil {
 		menuPlayer.Close()
 		gamePlayer.Close()
+		bossPlayer.Close()
 		lifeLostPlayer.Close()
 		jumpPlayer.Close()
 		gameOverPlayer.Close()
@@ -91,6 +114,7 @@ func NewManager() (*Manager, error) {
 	if err != nil {
 		menuPlayer.Close()
 		gamePlayer.Close()
+		bossPlayer.Close()
 		lifeLostPlayer.Close()
 		jumpPlayer.Close()
 		gameOverPlayer.Close()
@@ -99,15 +123,31 @@ func NewManager() (*Manager, error) {
 	}
 	hey2Player.SetVolume(sfxVolume)
 
+	powerUpPlayer, err := newOneShotPlayer(ctx, "power_up.mp3")
+	if err != nil {
+		menuPlayer.Close()
+		gamePlayer.Close()
+		bossPlayer.Close()
+		lifeLostPlayer.Close()
+		jumpPlayer.Close()
+		gameOverPlayer.Close()
+		hey1Player.Close()
+		hey2Player.Close()
+		return nil, fmt.Errorf("power up sfx: %w", err)
+	}
+	powerUpPlayer.SetVolume(sfxVolume)
+
 	return &Manager{
 		ctx:            ctx,
 		menuPlayer:     menuPlayer,
 		gamePlayer:     gamePlayer,
+		bossPlayer:     bossPlayer,
 		lifeLostPlayer: lifeLostPlayer,
 		jumpPlayer:     jumpPlayer,
 		gameOverPlayer: gameOverPlayer,
 		hey1Player:     hey1Player,
 		hey2Player:     hey2Player,
+		powerUpPlayer:  powerUpPlayer,
 	}, nil
 }
 
@@ -171,6 +211,14 @@ func (m *Manager) PlayGameOver() {
 	m.gameOverPlayer.Play()
 }
 
+func (m *Manager) PlayPowerUp() {
+	if m == nil || m.powerUpPlayer == nil {
+		return
+	}
+	_ = m.powerUpPlayer.Rewind()
+	m.powerUpPlayer.Play()
+}
+
 func (m *Manager) PlayPassDad() {
 	if m == nil || m.hey1Player == nil || m.hey2Player == nil {
 		return
@@ -186,22 +234,28 @@ func (m *Manager) PlayPassDad() {
 	player.Play()
 }
 
-func (m *Manager) SetMode(menu bool) {
-	if m == nil || m.menuMode == menu {
+func (m *Manager) SetMode(mode MusicMode) {
+	if m == nil || (m.modeSet && m.mode == mode) {
 		return
 	}
-	m.menuMode = menu
-
-	if menu {
-		m.gamePlayer.Pause()
-		_ = m.menuPlayer.Rewind()
-		m.menuPlayer.Play()
-		return
-	}
+	m.mode = mode
+	m.modeSet = true
 
 	m.menuPlayer.Pause()
-	_ = m.gamePlayer.Rewind()
-	m.gamePlayer.Play()
+	m.gamePlayer.Pause()
+	m.bossPlayer.Pause()
+
+	switch mode {
+	case MusicMenu:
+		_ = m.menuPlayer.Rewind()
+		m.menuPlayer.Play()
+	case MusicBoss:
+		_ = m.bossPlayer.Rewind()
+		m.bossPlayer.Play()
+	default:
+		_ = m.gamePlayer.Rewind()
+		m.gamePlayer.Play()
+	}
 }
 
 func (m *Manager) Close() error {
@@ -216,6 +270,11 @@ func (m *Manager) Close() error {
 	}
 	if m.gamePlayer != nil {
 		if e := m.gamePlayer.Close(); e != nil && err == nil {
+			err = e
+		}
+	}
+	if m.bossPlayer != nil {
+		if e := m.bossPlayer.Close(); e != nil && err == nil {
 			err = e
 		}
 	}
@@ -241,6 +300,11 @@ func (m *Manager) Close() error {
 	}
 	if m.hey2Player != nil {
 		if e := m.hey2Player.Close(); e != nil && err == nil {
+			err = e
+		}
+	}
+	if m.powerUpPlayer != nil {
+		if e := m.powerUpPlayer.Close(); e != nil && err == nil {
 			err = e
 		}
 	}
