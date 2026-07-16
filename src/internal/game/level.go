@@ -7,8 +7,8 @@ import (
 )
 
 const (
-	LevelStartDads     = 1 // 7
-	LevelDadsIncrement = 0 // 6
+	LevelStartDads     = 7 // 7
+	LevelDadsIncrement = 6 // 6
 
 	BossHitsRequired  = 4
 	BossThrowsAllowed = 10
@@ -32,13 +32,13 @@ const (
 	outrunPlayerScreenX   = 160.0
 	outrunGroundClearance = 10.0
 
-	outrunDurationPerChase   = 300 // +5s each subsequent chase
-	outrunStartLeadPerChase  = 18.0
-	outrunStartLeadMin       = 70.0
-	outrunWifeCloseBaseStep  = 0.35
-	outrunWifeCloseRiseStep  = 0.2
-	outrunTapLeadBoostStep   = 5.0
-	outrunTapLeadBoostMin    = 22.0
+	outrunDurationPerChase  = 300 // +5s each subsequent chase
+	outrunStartLeadPerChase = 18.0
+	outrunStartLeadMin      = 70.0
+	outrunWifeCloseBaseStep = 0.35
+	outrunWifeCloseRiseStep = 0.2
+	outrunTapLeadBoostStep  = 5.0
+	outrunTapLeadBoostMin   = 22.0
 
 	// Chase laugh SFX: random interval 3–6s at 60 TPS.
 	outrunLaughMinFrames = 180
