@@ -10,7 +10,10 @@ func TestBossVariantForLevel(t *testing.T) {
 	if got := BossVariantForLevel(4); got != BossVariantNeighbour {
 		t.Errorf("BossVariantForLevel(4) = %d, want BossVariantNeighbour", got)
 	}
-	for _, level := range []int{1, 2, 3, 5, 6, 7} {
+	if got := BossVariantForLevel(5); got != BossVariantDad {
+		t.Errorf("BossVariantForLevel(5) = %d, want BossVariantDad", got)
+	}
+	for _, level := range []int{1, 2, 3, 6, 7} {
 		if got := BossVariantForLevel(level); got != BossVariantLady {
 			t.Errorf("BossVariantForLevel(%d) = %d, want BossVariantLady", level, got)
 		}

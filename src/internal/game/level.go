@@ -52,6 +52,22 @@ const (
 	outrunSprintDurationMax = 90
 	outrunSprintCloseMult   = 1.75
 
+	// Boxing match (level 5): deplete boss HP before the timer runs out.
+	BoxingDurationFrames         = 1200 // 20s at 60 TPS — player deadline bar
+	boxingBossMaxHP              = 100.0
+	boxingTapDamage              = 4.0
+	boxingUppercutDamage         = 6.0
+	boxingHitTimePenaltyFrames   = 5 * 60 // −5s per dad hit
+	boxingDadSuppressFrames      = 20     // dad can't punch while player mashes
+	boxingBurstCooldownMin       = 150
+	boxingBurstCooldownMax       = 300
+	boxingBurstDurationMin       = 40
+	boxingBurstDurationMax       = 75
+	boxingPlayerDisplayH         = 125.0
+	boxingDadDisplayH            = 200.0
+	boxingPlayerScreenX          = 140.0
+	boxingGroundClearance        = 10.0
+
 	bossBaseMoveSpeed   = 2.2
 	bossMoveSpeedPerLvl = 0.25
 	bossMaxMoveSpeed    = 4.5
@@ -81,14 +97,34 @@ func DadsRequiredForLevel(level int) int {
 const (
 	BossVariantLady = iota
 	BossVariantNeighbour
+	BossVariantDad
 )
 
 // BossVariantForLevel selects boss presentation and fight rules.
 func BossVariantForLevel(level int) int {
-	if level == 4 {
+	switch level {
+	case 4:
 		return BossVariantNeighbour
+	case 5:
+		return BossVariantDad
+	default:
+		return BossVariantLady
 	}
-	return BossVariantLady
+}
+
+// BossIsBoxing is true for the level-5 dad boxing endurance fight.
+func BossIsBoxing(level int) bool {
+	return level == 5
+}
+
+func boxingBurstCooldownFrames() int {
+	span := boxingBurstCooldownMax - boxingBurstCooldownMin + 1
+	return boxingBurstCooldownMin + rand.Intn(span)
+}
+
+func boxingBurstDurationFrames() int {
+	span := boxingBurstDurationMax - boxingBurstDurationMin + 1
+	return boxingBurstDurationMin + rand.Intn(span)
 }
 
 // BossIsOutrun is true for every 3rd level's scrolling-race boss fight (3, 6, 9, …).

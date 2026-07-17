@@ -48,6 +48,7 @@ const (
 const (
 	bossModeThrow = iota
 	bossModeOutrun
+	bossModeBoxing
 )
 
 var bossExplodeOrange = color.RGBA{255, 140, 40, 255}
@@ -141,6 +142,10 @@ type BossFight struct {
 	sprintFrames    int
 	sprintCooldown  int
 	runAnimTick     int
+
+	// Boxing victory hold (paused win pose until CONTINUE).
+	boxingVictoryHold     bool
+	boxingFramesSinceTap  int
 }
 
 func NewBossFight() *BossFight {
@@ -192,6 +197,8 @@ func (bf *BossFight) Reset(level int) {
 	bf.lead = 0
 	bf.scrollX = 0
 	bf.runAnimTick = 0
+	bf.boxingVictoryHold = false
+	bf.boxingFramesSinceTap = boxingDadSuppressFrames
 
 	if BossIsOutrun(level) {
 		bf.mode = bossModeOutrun
@@ -213,6 +220,11 @@ func (bf *BossFight) Reset(level int) {
 			hitboxInset: BossHitboxInsetForLevel(level),
 			faceRight:   true,
 		}
+		return
+	}
+
+	if BossIsBoxing(level) {
+		bf.resetBoxingBoss(level)
 		return
 	}
 
@@ -249,7 +261,7 @@ func (bf *BossFight) IsSprinting() bool {
 }
 
 func (bf *BossFight) InCountdown() bool {
-	return bf.mode == bossModeOutrun && bf.countdownFrames > 0
+	return (bf.mode == bossModeOutrun || bf.mode == bossModeBoxing) && bf.countdownFrames > 0
 }
 
 // CountdownDisplay returns "3"/"2"/"1"/"GO!" while counting down, else "".
@@ -286,6 +298,44 @@ func (bf *BossFight) LeadFrac() float64 {
 		return 0
 	}
 	f := (bf.lead - outrunCatchLead) / span
+	if f < 0 {
+		return 0
+	}
+	if f > 1 {
+		return 1
+	}
+	return f
+}
+
+// BossHPFrac is remaining boss HP 0..1 (boxing uses lead as HP).
+func (bf *BossFight) BossHPFrac() float64 {
+	if boxingBossMaxHP <= 0 {
+		return 0
+	}
+	f := bf.lead / boxingBossMaxHP
+	if f < 0 {
+		return 0
+	}
+	if f > 1 {
+		return 1
+	}
+	return f
+}
+
+// TimerFrac is remaining fight deadline 0..1.
+func (bf *BossFight) TimerFrac() float64 {
+	dur := bf.outrunDuration
+	if dur <= 0 {
+		if bf.IsBoxing() {
+			dur = BoxingDurationFrames
+		} else {
+			dur = OutrunDurationFramesForLevel(bf.level)
+		}
+	}
+	if dur <= 0 {
+		return 0
+	}
+	f := float64(bf.TimerRemaining()) / float64(dur)
 	if f < 0 {
 		return 0
 	}
@@ -566,11 +616,19 @@ func (bf *BossFight) CanThrow() bool {
 }
 
 func (bf *BossFight) CanTap() bool {
-	return bf.mode == bossModeOutrun && !bf.pendingWin && !bf.InCountdown() && bf.timerFrames > 0
+	tapMode := bf.mode == bossModeOutrun || bf.mode == bossModeBoxing
+	if bf.boxingLosePending() || bf.BoxingVictoryReady() {
+		return false
+	}
+	return tapMode && !bf.pendingWin && !bf.InCountdown() && bf.timerFrames > 0
 }
 
 func (bf *BossFight) Tap() {
 	if !bf.CanTap() {
+		return
+	}
+	if bf.IsBoxing() {
+		bf.boxingTap()
 		return
 	}
 	bf.lead += OutrunTapLeadBoostForLevel(bf.level)
@@ -752,11 +810,18 @@ func (bf *BossFight) Update() (won, lost bool) {
 	bf.updateParticles()
 
 	if bf.pendingWin {
+		if bf.IsBoxing() {
+			return bf.updateBoxingWin()
+		}
 		return bf.updateDeath()
 	}
 
 	if bf.mode == bossModeOutrun {
 		return bf.updateOutrun()
+	}
+
+	if bf.mode == bossModeBoxing {
+		return bf.updateBoxing()
 	}
 
 	if bf.IsDuel() {
@@ -894,7 +959,10 @@ func (bf *BossFight) syncOutrunBossPos() {
 }
 
 func (bf *BossFight) Draw(screen *ebiten.Image) {
-	if bf.IsDuel() {
+	switch {
+	case bf.IsBoxing():
+		bf.drawDadFighter(screen)
+	case bf.IsDuel():
 		bf.drawNeighbourBoss(screen)
 		for _, p := range bf.projectiles {
 			drawThrownGlassProjectile(screen, p)
@@ -902,7 +970,7 @@ func (bf *BossFight) Draw(screen *ebiten.Image) {
 		if bf.enemyProjectile != nil {
 			drawFootballProjectile(screen, bf.enemyProjectile)
 		}
-	} else {
+	default:
 		bf.boss.Draw(screen)
 		if bf.mode == bossModeThrow {
 			for _, p := range bf.projectiles {

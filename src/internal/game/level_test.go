@@ -218,16 +218,21 @@ func TestBossFightResetScalesWithLevel(t *testing.T) {
 	speed1 := bf.boss.baseSpeedY
 	inset1 := bf.boss.hitboxInset
 
-	bf.Reset(5)
+	bf.Reset(2)
 	if bf.boss.baseSpeedY <= speed1 {
-		t.Errorf("level 5 speed %v should exceed level 1 speed %v", bf.boss.baseSpeedY, speed1)
+		t.Errorf("level 2 speed %v should exceed level 1 speed %v", bf.boss.baseSpeedY, speed1)
 	}
 	if bf.boss.hitboxInset <= inset1 {
-		t.Errorf("level 5 inset %v should exceed level 1 inset %v", bf.boss.hitboxInset, inset1)
+		t.Errorf("level 2 inset %v should exceed level 1 inset %v", bf.boss.hitboxInset, inset1)
 	}
-	wantHits := BossHitsForLevel(5)
-	wantThrows := BossThrowsForLevel(5)
+	wantHits := BossHitsForLevel(2)
+	wantThrows := BossThrowsForLevel(2)
 	if bf.hitsRequired != wantHits || bf.throwsAllowed != wantThrows {
 		t.Errorf("hits/throws = %d/%d, want %d/%d", bf.hitsRequired, bf.throwsAllowed, wantHits, wantThrows)
+	}
+
+	bf.Reset(5)
+	if !bf.IsBoxing() {
+		t.Fatal("level 5 should be boxing mode")
 	}
 }
