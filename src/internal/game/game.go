@@ -716,6 +716,12 @@ func (g *Game) Update() error {
 		}
 
 	case StateBossFight:
+		if g.bossFight.CanDodge() && g.flapInput() {
+			g.bossFight.DuelFlap()
+			if g.music != nil {
+				g.music.PlayJump()
+			}
+		}
 		won, lost := g.bossFight.Update()
 		if g.bossFight.ConsumeHitSFX() && g.music != nil {
 			g.music.PlayGlassBreak()
@@ -726,6 +732,21 @@ func (g *Game) Update() error {
 		}
 		if g.bossFight.ConsumeLaughSFX() && g.music != nil {
 			g.music.PlayLaughingRun()
+		}
+		if g.bossFight.ConsumeLifeLost() {
+			if g.music != nil {
+				g.music.PlayLifeLost()
+			}
+			g.lives--
+			if g.lives <= 0 {
+				g.clearThrowCharge()
+				if g.music != nil {
+					g.music.PlayGameOver()
+				}
+				g.playerName = ""
+				g.state = StateEnterName
+				g.nameInputOpen = true
+			}
 		}
 		if won {
 			g.clearThrowCharge()
@@ -826,7 +847,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		if g.state == StateBossFight && g.bossFight.IsOutrun() {
 			scroll = g.bossFight.ScrollX()
 		}
-		drawBossBackground(screen, scroll)
+		drawBossBackground(screen, scroll, g.level)
 	} else {
 		drawPubBackground(screen, g.bgScrollX, g.decorSeed, WallpaperIndex(g.level), g.level)
 	}
@@ -877,6 +898,8 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	case StateBossFight:
 		if g.bossFight.IsOutrun() {
 			drawOutrunPlayer(screen, g.bossFight)
+		} else if g.bossFight.IsDuel() {
+			drawDuelPlayer(screen, g.bossFight, g.throwChargePower())
 		} else {
 			drawBossPlayer(screen, g.throwChargePower())
 		}
@@ -975,6 +998,17 @@ func drawGlassRow(screen *ebiten.Image, filled, total int, centered bool) {
 		return
 	}
 	full := sprite.LifeFull()
+	scale := float64(LifeGlassW) / float64(sprite.LifeFrameWidth())
+	scaledH := float64(full.Bounds().Dy()) * scale
+	baseY := float64(ScreenH - GroundHeight) + (float64(GroundHeight)-scaledH)/2
+	drawGlassRowAt(screen, filled, total, centered, baseY)
+}
+
+func drawGlassRowAt(screen *ebiten.Image, filled, total int, centered bool, baseY float64) {
+	if total <= 0 {
+		return
+	}
+	full := sprite.LifeFull()
 	empty := sprite.LifeEmpty()
 	scale := float64(LifeGlassW) / float64(sprite.LifeFrameWidth())
 
@@ -983,8 +1017,6 @@ func drawGlassRow(screen *ebiten.Image, filled, total int, centered bool) {
 	if centered {
 		baseX = (ScreenW - totalW) / 2
 	}
-	scaledH := int(float64(full.Bounds().Dy()) * scale)
-	baseY := ScreenH - GroundHeight + (GroundHeight-scaledH)/2
 
 	for i := 0; i < total; i++ {
 		img := full
@@ -994,7 +1026,7 @@ func drawGlassRow(screen *ebiten.Image, filled, total int, centered bool) {
 		x := baseX + i*(LifeGlassW+LifeGlassGap)
 		op := &ebiten.DrawImageOptions{}
 		op.GeoM.Scale(scale, scale)
-		op.GeoM.Translate(float64(x), float64(baseY))
+		op.GeoM.Translate(float64(x), baseY)
 		screen.DrawImage(img, op)
 	}
 }
@@ -1076,33 +1108,53 @@ func drawBossHUD(screen *ebiten.Image, bf *BossFight, chargePower float64, charg
 		vector.StrokeRect(screen, float32(barX), float32(lifeBarY), float32(bossHudBarW), float32(bossHudBarH), 2, ColorKegEdge, true)
 	}
 
-	if !charging {
-		drawLabel(screen, "Hold to throw", ScreenW/2, hintY, ColorTextMuted)
+	hudHintY := hintY
+	hudChargeY := chargeBarY
+	if bf.IsDuel() {
+		hudHintY = lifeBarY + 28
+		hudChargeY = hudHintY + 22
+	}
+
+	if bf.IsDuel() {
+		switch bf.DuelTurn() {
+		case duelTurnEnemy, duelTurnEnemyResolve:
+			drawLabel(screen, "Dodge!", ScreenW/2, hudHintY, ColorTextMuted)
+		default:
+			if !charging {
+				drawLabel(screen, "Your turn — hold to throw", ScreenW/2, hudHintY, ColorTextMuted)
+			}
+		}
+	} else if !charging {
+		drawLabel(screen, "Hold to throw", ScreenW/2, hudHintY, ColorTextMuted)
 	}
 	remaining := bf.throwsAllowed - bf.throwsUsed
 	if remaining < 0 {
 		remaining = 0
 	}
-	drawGlassRow(screen, remaining, bf.throwsAllowed, true)
+	if bf.IsDuel() {
+		drawGlassRowAt(screen, remaining, bf.throwsAllowed, true, hudChargeY+bossHudBarH+10)
+	} else {
+		drawGlassRow(screen, remaining, bf.throwsAllowed, true)
+	}
 
 	if chargePower < 0 {
 		chargePower = 0
 	} else if chargePower > 1 {
 		chargePower = 1
 	}
-	vector.DrawFilledRect(screen, float32(barX), float32(chargeBarY), float32(bossHudBarW), float32(bossHudBarH), ColorGlassEdge, true)
-	vector.StrokeRect(screen, float32(barX), float32(chargeBarY), float32(bossHudBarW), float32(bossHudBarH), 2, ColorKegEdge, true)
+	vector.DrawFilledRect(screen, float32(barX), float32(hudChargeY), float32(bossHudBarW), float32(bossHudBarH), ColorGlassEdge, true)
+	vector.StrokeRect(screen, float32(barX), float32(hudChargeY), float32(bossHudBarW), float32(bossHudBarH), 2, ColorKegEdge, true)
 	if chargePower > 0 {
 		fillW := bossHudBarW * chargePower
 		col := ColorBeer
 		if chargePower >= 1 {
 			col = ColorFoam
 		}
-		vector.DrawFilledRect(screen, float32(barX), float32(chargeBarY), float32(fillW), float32(bossHudBarH), col, true)
+		vector.DrawFilledRect(screen, float32(barX), float32(hudChargeY), float32(fillW), float32(bossHudBarH), col, true)
 		if chargePower >= 0.4 {
-			drawChargeFoamBubbles(screen, barX, chargeBarY, fillW, bossHudBarH, chargePower)
+			drawChargeFoamBubbles(screen, barX, hudChargeY, fillW, bossHudBarH, chargePower)
 		}
-		vector.StrokeRect(screen, float32(barX), float32(chargeBarY), float32(bossHudBarW), float32(bossHudBarH), 2, ColorKegEdge, true)
+		vector.StrokeRect(screen, float32(barX), float32(hudChargeY), float32(bossHudBarW), float32(bossHudBarH), 2, ColorKegEdge, true)
 	}
 }
 
@@ -1220,6 +1272,14 @@ func drawContinuePrompt(screen *ebiten.Image, text string) {
 }
 
 func drawBossIntroPrompt(screen *ebiten.Image, level int) {
+	if BossVariantForLevel(level) == BossVariantNeighbour {
+		drawLabel(screen, "The PappaPub neighbour wants", ScreenW/2, continueBtnY-72, ColorText)
+		drawLabel(screen, "a kickabout at the stadium —", ScreenW/2, continueBtnY-50, ColorText)
+		drawLabel(screen, "hit him with beer glasses!", ScreenW/2, continueBtnY-28, ColorText)
+		x, y, w, h := meetBossButtonBounds()
+		drawPubButton(screen, "KICK OFF!", x, y, w, h)
+		return
+	}
 	if BossIsOutrun(level) {
 		secs := (OutrunDurationFramesForLevel(level) + 59) / 60
 		drawLabel(screen, "Your best pal's wife is chasing you!", ScreenW/2, continueBtnY-72, ColorText)

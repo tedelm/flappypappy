@@ -8,10 +8,10 @@ import (
 )
 
 const (
-	LevelStartDads     = 1 // 7
-	LevelDadsIncrement = 0 // 6
+	LevelStartDads     = 7 // 7
+	LevelDadsIncrement = 6 // 6
 
-	BossHitsRequired  = 1  // 4
+	BossHitsRequired  = 4  // 4
 	BossThrowsAllowed = 10 // 10
 
 	// Outrun chase: every 3rd level; base duration 20s at 60 TPS.
@@ -76,6 +76,19 @@ func DadsRequiredForLevel(level int) int {
 		level = 1
 	}
 	return LevelStartDads + (level-1)*LevelDadsIncrement
+}
+
+const (
+	BossVariantLady = iota
+	BossVariantNeighbour
+)
+
+// BossVariantForLevel selects boss presentation and fight rules.
+func BossVariantForLevel(level int) int {
+	if level == 4 {
+		return BossVariantNeighbour
+	}
+	return BossVariantLady
 }
 
 // BossIsOutrun is true for every 3rd level's scrolling-race boss fight (3, 6, 9, …).

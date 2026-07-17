@@ -35,8 +35,13 @@ func drawPubBackground(screen *ebiten.Image, scrollX float64, seed int, wallpape
 	drawPubDecor(screen, scrollX, seed, level)
 }
 
-func drawBossBackground(screen *ebiten.Image, scrollX float64) {
-	img := sprite.Boss1BG()
+func drawBossBackground(screen *ebiten.Image, scrollX float64, level int) {
+	var img *ebiten.Image
+	if BossVariantForLevel(level) == BossVariantNeighbour {
+		img = sprite.SoccerStadium()
+	} else {
+		img = sprite.Boss1BG()
+	}
 	bounds := img.Bounds()
 	imgW := float64(bounds.Dx())
 	imgH := float64(bounds.Dy())

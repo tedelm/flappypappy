@@ -94,6 +94,7 @@ type Boss struct {
 
 type BossFight struct {
 	mode          int
+	variant       int
 	throwsUsed    int
 	hits          int
 	hitsRequired  int
@@ -106,6 +107,23 @@ type BossFight struct {
 	explodeSFX    bool
 	hitSFX        bool
 	boss          Boss
+
+	// Neighbour duel (level 4 alternating turns).
+	duelTurn          int
+	lastThrowPower    float64
+	playerThrowFrame  int
+	playerThrowTick   int
+	playerThrowing    bool
+	glassSpawned      bool
+	enemyThrowFrame   int
+	enemyThrowTick    int
+	enemyThrowing     bool
+	footballSpawned   bool
+	enemyProjectile   *FootballProjectile
+	footballHits      int
+	lifeLostPending   bool
+	playerInvincible  int
+	playerVY          float64
 
 	// Outrun (scrolling race every 3rd level).
 	level           int
@@ -152,6 +170,13 @@ func (bf *BossFight) Reset(level int) {
 	bf.deathTimer = 0
 	bf.explodeSFX = false
 	bf.hitSFX = false
+	bf.variant = BossVariantLady
+	bf.duelTurn = duelTurnPlayer
+	bf.enemyProjectile = nil
+	bf.lifeLostPending = false
+	bf.footballHits = 0
+	bf.playerInvincible = 0
+	bf.playerVY = 0
 	bf.tapSFX = false
 	bf.laughSFX = false
 	bf.laughCooldown = 0
@@ -192,6 +217,10 @@ func (bf *BossFight) Reset(level int) {
 	}
 
 	bf.mode = bossModeThrow
+	if BossVariantForLevel(level) == BossVariantNeighbour {
+		bf.resetNeighbourBoss(level)
+		return
+	}
 	bf.boss = Boss{
 		X:           homeX,
 		Y:           bossPlayerY,
@@ -521,7 +550,19 @@ func (bf *BossFight) drawParticles(screen *ebiten.Image) {
 }
 
 func (bf *BossFight) CanThrow() bool {
-	return bf.mode == bossModeThrow && !bf.pendingWin && bf.throwsUsed < bf.throwsAllowed && len(bf.projectiles) == 0
+	if bf.pendingWin {
+		return false
+	}
+	if bf.throwsUsed >= bf.throwsAllowed {
+		return false
+	}
+	if len(bf.projectiles) > 0 {
+		return false
+	}
+	if bf.IsDuel() {
+		return bf.duelTurn == duelTurnPlayer && !bf.playerThrowing
+	}
+	return bf.mode == bossModeThrow
 }
 
 func (bf *BossFight) CanTap() bool {
@@ -576,6 +617,10 @@ func ThrowChargeMaxFrames() int {
 
 func (bf *BossFight) Throw(power float64) {
 	if !bf.CanThrow() {
+		return
+	}
+	if bf.IsDuel() {
+		bf.duelThrow(power)
 		return
 	}
 	if power < 0 {
@@ -714,6 +759,10 @@ func (bf *BossFight) Update() (won, lost bool) {
 		return bf.updateOutrun()
 	}
 
+	if bf.IsDuel() {
+		return bf.updateDuel()
+	}
+
 	bf.boss.Update()
 
 	remaining := bf.projectiles[:0]
@@ -845,10 +894,20 @@ func (bf *BossFight) syncOutrunBossPos() {
 }
 
 func (bf *BossFight) Draw(screen *ebiten.Image) {
-	bf.boss.Draw(screen)
-	if bf.mode == bossModeThrow {
+	if bf.IsDuel() {
+		bf.drawNeighbourBoss(screen)
 		for _, p := range bf.projectiles {
-			drawProjectile(screen, p)
+			drawThrownGlassProjectile(screen, p)
+		}
+		if bf.enemyProjectile != nil {
+			drawFootballProjectile(screen, bf.enemyProjectile)
+		}
+	} else {
+		bf.boss.Draw(screen)
+		if bf.mode == bossModeThrow {
+			for _, p := range bf.projectiles {
+				drawProjectile(screen, p)
+			}
 		}
 	}
 	bf.drawParticles(screen)
