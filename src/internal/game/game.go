@@ -694,7 +694,7 @@ func (g *Game) Update() error {
 			g.invincibleFrames--
 		} else {
 			bx, by, bw, bh := g.bird.Bounds()
-			if g.pipes.Collides(bx, by, bw, bh) || g.hitBounds(bx, by, bw, bh) {
+			if g.pipes.Collides(bx, by, bw, bh, DadVariantForLevel(g.level, g.decorSeed)) || g.hitBounds(bx, by, bw, bh) {
 				g.loseLife()
 			}
 		}
@@ -860,7 +860,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		drawWoodenFloor(screen)
 		drawPubStools(screen, g.bgScrollX, g.decorSeed)
 		if showPipes {
-			g.pipes.DrawDads(screen)
+			g.pipes.DrawDads(screen, DadVariantForLevel(g.level, g.decorSeed))
 		}
 	}
 

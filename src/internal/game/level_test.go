@@ -42,6 +42,51 @@ func TestWallpaperIndex(t *testing.T) {
 	}
 }
 
+func TestDadVariantForLevel(t *testing.T) {
+	if got := DadVariantForLevel(1, 99); got != 0 {
+		t.Errorf("DadVariantForLevel(1) = %d, want 0", got)
+	}
+	if got := DadVariantForLevel(2, 99); got != 1 {
+		t.Errorf("DadVariantForLevel(2) = %d, want 1", got)
+	}
+	if got := DadVariantForLevel(3, 99); got != 2 {
+		t.Errorf("DadVariantForLevel(3) = %d, want 2", got)
+	}
+	if got := DadVariantForLevel(4, 99); got != 3 {
+		t.Errorf("DadVariantForLevel(4) = %d, want 3", got)
+	}
+	if got := DadVariantForLevel(0, 99); got != 0 {
+		t.Errorf("DadVariantForLevel(0) = %d, want 0", got)
+	}
+
+	seed := 12345
+	a := DadVariantForLevel(5, seed)
+	b := DadVariantForLevel(5, seed)
+	if a != b {
+		t.Errorf("DadVariantForLevel(5) not stable: %d vs %d", a, b)
+	}
+	if a < 0 || a >= 4 {
+		t.Errorf("DadVariantForLevel(5) = %d, want in [0,3]", a)
+	}
+	if a == 3 {
+		t.Errorf("DadVariantForLevel(5) = 3, must not repeat level 4")
+	}
+
+	for _, s := range []int{1, 99, 12345, 99999} {
+		prev := DadVariantForLevel(4, s)
+		for level := 5; level <= 20; level++ {
+			got := DadVariantForLevel(level, s)
+			if got < 0 || got >= 4 {
+				t.Fatalf("seed %d level %d: variant %d out of range", s, level, got)
+			}
+			if got == prev {
+				t.Fatalf("seed %d level %d: repeated variant %d", s, level, got)
+			}
+			prev = got
+		}
+	}
+}
+
 func TestLevelPaintingWindow(t *testing.T) {
 	tests := []struct {
 		level      int

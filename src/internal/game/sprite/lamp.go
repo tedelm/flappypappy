@@ -17,6 +17,7 @@ var (
 	lampImage    *ebiten.Image
 	lampFeetPad  float64
 	lampContentH float64
+	lampContentW float64
 )
 
 func ensureLampLoaded() {
@@ -25,10 +26,13 @@ func ensureLampLoaded() {
 		if err != nil {
 			panic(err)
 		}
-		rgba := ToRGBA(img)
-		lampFeetPad, lampContentH = MeasureRGBA(rgba)
+		rgba := KeyBlackTransparent(ToRGBA(img))
+		lampFeetPad, lampContentH, lampContentW = MeasureRGBASize(rgba)
 		if lampContentH == 0 {
 			lampContentH = float64(rgba.Bounds().Dy())
+		}
+		if lampContentW == 0 {
+			lampContentW = float64(rgba.Bounds().Dx())
 		}
 		lampImage = ebiten.NewImageFromImage(rgba)
 	})
@@ -47,4 +51,9 @@ func LampFeetPad() float64 {
 func LampContentH() float64 {
 	ensureLampLoaded()
 	return lampContentH
+}
+
+func LampContentW() float64 {
+	ensureLampLoaded()
+	return lampContentW
 }

@@ -257,6 +257,33 @@ func WallpaperIndex(level int) int {
 	return (level - 1) % NumWallpapers
 }
 
+// DadVariantForLevel picks the obstacle dad sprite sheet for a level.
+// Levels 1–4 map to dad / dad_2 / dad_3 / dad_4; from level 5 onward the pick
+// is hashed from seed so it stays fixed for that level within a run, and never
+// repeats the previous level's variant.
+func DadVariantForLevel(level, seed int) int {
+	if level < 1 {
+		level = 1
+	}
+	switch level {
+	case 1:
+		return 0
+	case 2:
+		return 1
+	case 3:
+		return 2
+	case 4:
+		return 3
+	default:
+		prev := DadVariantForLevel(level-1, seed)
+		pick := int(decorHash(seed, level) % uint32(sprite.DadVariantCount-1))
+		if pick >= prev {
+			pick++
+		}
+		return pick
+	}
+}
+
 func LevelPaintingWindow(level int) (start, count int) {
 	if level < 1 {
 		level = 1
