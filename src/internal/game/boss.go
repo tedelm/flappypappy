@@ -884,7 +884,8 @@ func (bf *BossFight) Update() (won, lost bool) {
 	if bf.pendingWin {
 		return false, false
 	}
-	if bf.throwsUsed >= bf.throwsAllowed && len(bf.projectiles) == 0 && bf.hits < bf.hitsRequired {
+	if len(bf.projectiles) == 0 &&
+		bf.throwsAllowed-bf.throwsUsed < bf.hitsRequired-bf.hits {
 		return false, true
 	}
 	return false, false

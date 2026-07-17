@@ -33,13 +33,13 @@ const (
 	outrunPlayerScreenX   = 160.0
 	outrunGroundClearance = 10.0
 
-	outrunDurationPerChase  = 300 // +5s each subsequent chase
-	outrunStartLeadPerChase = 18.0
+	outrunDurationPerChase  = 180 // +3s each subsequent chase
+	outrunStartLeadPerChase = 9.0
 	outrunStartLeadMin      = 70.0
-	outrunWifeCloseBaseStep = 0.35
-	outrunWifeCloseRiseStep = 0.2
-	outrunTapLeadBoostStep  = 5.0
-	outrunTapLeadBoostMin   = 22.0
+	outrunWifeCloseBaseStep = 0.15
+	outrunWifeCloseRiseStep = 0.1
+	outrunTapLeadBoostStep  = 1.0
+	outrunTapLeadBoostMin   = 18.0
 
 	// Chase laugh SFX: random interval 3–6s at 60 TPS.
 	outrunLaughMinFrames = 180
@@ -193,12 +193,12 @@ func OutrunTapLeadBoostForLevel(level int) float64 {
 }
 
 // OutrunDifficultyMult scales how fast the boss closes the gap each chase.
-// Chase 1 (level 3): 2.0×. Each subsequent chase multiplies by 1.15.
+// Chase 1 (level 3): 1.7×. Each subsequent chase multiplies by 1.05.
 func OutrunDifficultyMult(chaseIndex int) float64 {
 	if chaseIndex < 1 {
 		chaseIndex = 1
 	}
-	return 1.7 * math.Pow(1.10, float64(chaseIndex-1))
+	return 1.7 * math.Pow(1.05, float64(chaseIndex-1))
 }
 
 func OutrunCountdownTotalFrames() int {

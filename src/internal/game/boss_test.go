@@ -201,6 +201,31 @@ func TestOutrunSurviveWithTaps(t *testing.T) {
 	}
 }
 
+func TestOutrunSurviveWithTapsLevel6(t *testing.T) {
+	bf := NewBossFight()
+	bf.Reset(6)
+	skipOutrunCountdown(bf)
+	won := false
+	dur := OutrunDurationFramesForLevel(6)
+	for i := 0; i < dur+deathTipFrames+deathExplodeHold+deathSettleFrames+10; i++ {
+		// Same ~8 taps/sec cadence as level 3 — L6 must stay beatable.
+		if i%7 == 0 {
+			bf.Tap()
+		}
+		w, l := bf.Update()
+		if l {
+			t.Fatalf("lost at frame %d with lead=%v timer=%d", i, bf.lead, bf.timerFrames)
+		}
+		if w {
+			won = true
+			break
+		}
+	}
+	if !won {
+		t.Fatal("expected win after surviving level 6 timer with steady taps")
+	}
+}
+
 func TestOutrunHarderEachChase(t *testing.T) {
 	if OutrunDurationFramesForLevel(6) <= OutrunDurationFramesForLevel(3) {
 		t.Error("level 6 duration should exceed level 3")
@@ -217,11 +242,13 @@ func TestOutrunHarderEachChase(t *testing.T) {
 	if OutrunTapLeadBoostForLevel(6) >= OutrunTapLeadBoostForLevel(3) {
 		t.Error("level 6 tap boost should be weaker than level 3")
 	}
-	if OutrunDifficultyMult(6) <= OutrunDifficultyMult(3) {
+	mult3 := OutrunDifficultyMult(OutrunChaseIndex(3))
+	mult6 := OutrunDifficultyMult(OutrunChaseIndex(6))
+	if mult6 <= mult3 {
 		t.Error("level 6 difficulty mult should exceed level 3")
 	}
-	if OutrunDifficultyMult(3) < 1.99 {
-		t.Errorf("first chase difficulty mult = %v, want ~2.0", OutrunDifficultyMult(3))
+	if mult3 < 1.69 || mult3 > 1.71 {
+		t.Errorf("first chase difficulty mult = %v, want ~1.7", mult3)
 	}
 }
 
@@ -318,5 +345,39 @@ func TestOutrunSprintScheduling(t *testing.T) {
 	}
 	if bf.sprintCooldown < outrunSprintCooldownMin || bf.sprintCooldown > outrunSprintCooldownMax {
 		t.Errorf("sprintCooldown %d outside [%d,%d]", bf.sprintCooldown, outrunSprintCooldownMin, outrunSprintCooldownMax)
+	}
+}
+
+func TestThrowImpossibleLoss(t *testing.T) {
+	bf := NewBossFight()
+	bf.Reset(1)
+	if bf.hitsRequired != 4 || bf.throwsAllowed != 10 {
+		t.Fatalf("level 1 hits/throws = %d/%d, want 4/10", bf.hitsRequired, bf.throwsAllowed)
+	}
+
+	bf.hits = 2
+	bf.throwsUsed = 9
+	bf.projectiles = nil
+	_, lost := bf.Update()
+	if !lost {
+		t.Fatal("should lose when remaining glasses < remaining hits")
+	}
+
+	bf.Reset(1)
+	bf.hits = 2
+	bf.throwsUsed = 9
+	bf.projectiles = []*Projectile{{X: 100, Y: 100, VX: 1, VY: 0}}
+	_, lost = bf.Update()
+	if lost {
+		t.Fatal("should not lose while a glass is still in flight")
+	}
+
+	bf.Reset(1)
+	bf.hits = 3
+	bf.throwsUsed = 9
+	bf.projectiles = nil
+	_, lost = bf.Update()
+	if lost {
+		t.Fatal("should not lose when remaining glasses can still cover remaining hits")
 	}
 }

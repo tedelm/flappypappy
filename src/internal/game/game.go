@@ -80,7 +80,8 @@ const (
 	highScoreColLevel   = 168
 	highScoreColScore   = 228
 	highScoreColDiff    = 318
-	loadTimeoutFrames   = 600
+	loadTimeoutFrames      = 600
+	levelTransitionFrames  = 180 // ~3s at 60 TPS
 )
 
 func difficultyLabelX(d Difficulty) float64 {
@@ -113,6 +114,7 @@ const (
 	StateReady
 	StateLevelIntro
 	StatePlaying
+	StateLevelExit
 	StateBossIntro
 	StateBossFight
 	StateLevelComplete
@@ -141,6 +143,7 @@ type Game struct {
 	highScores          *HighScores
 	bgScrollX           float64
 	decorSeed           int
+	transitionFrames    int
 	bird                *Bird
 	pipes               *PipeManager
 	bossFight           *BossFight
@@ -217,7 +220,7 @@ func (g *Game) startGame() {
 	g.playerName = ""
 	g.bgScrollX = 0
 	g.decorSeed = rand.Int()
-	g.state = StateLevelIntro
+	g.beginLevelIntro()
 }
 
 func (g *Game) applyDebugStart() {
@@ -253,12 +256,61 @@ func (g *Game) applyDebugStart() {
 }
 
 func (g *Game) beginPlaying() {
+	g.bird.Reset()
 	g.state = StatePlaying
 	g.flap()
 }
 
+func (g *Game) beginLevelIntro() {
+	g.transitionFrames = 0
+	g.bird.X = -g.bird.Width
+	g.bird.Y = float64(ScreenH-GroundHeight) / 2
+	g.bird.VY = 0
+	g.state = StateLevelIntro
+}
+
+func (g *Game) updateLevelIntro() {
+	g.transitionFrames++
+	t := float64(g.transitionFrames) / float64(levelTransitionFrames)
+	if t > 1 {
+		t = 1
+	}
+	startX := -g.bird.Width
+	g.bird.X = startX + (BirdStartX-startX)*t
+	g.bird.Y = float64(ScreenH-GroundHeight)/2 + sinBob(g.transitionFrames)*8
+	g.bird.VY = 0
+	if g.transitionFrames >= levelTransitionFrames {
+		g.beginPlaying()
+	}
+}
+
 func (g *Game) enterBossIntro() {
+	g.bird.Reset()
+	g.transitionFrames = 0
 	g.state = StateBossIntro
+}
+
+func (g *Game) beginLevelExit() {
+	g.transitionFrames = 0
+	g.bird.VY = 0
+	g.state = StateLevelExit
+}
+
+func (g *Game) updateLevelExit() {
+	g.transitionFrames++
+	g.pipes.Update()
+	g.bgScrollX += g.pipes.Speed() * BgParallaxFactor
+	endX := float64(ScreenW) + g.bird.Width
+	t := float64(g.transitionFrames) / float64(levelTransitionFrames)
+	if t > 1 {
+		t = 1
+	}
+	g.bird.X = BirdStartX + (endX-BirdStartX)*t
+	g.bird.Y = float64(ScreenH-GroundHeight)/2 + sinBob(g.transitionFrames)*8
+	g.bird.VY = 0
+	if g.transitionFrames >= levelTransitionFrames {
+		g.enterBossIntro()
+	}
 }
 
 func (g *Game) enterBossFight() {
@@ -345,8 +397,7 @@ func (g *Game) advanceToNextLevel() {
 	g.bird.Reset()
 	g.pipes.Reset()
 	g.pipes.SetSpawnLimit(DadsRequiredForLevel(g.level))
-	g.state = StatePlaying
-	g.flap()
+	g.beginLevelIntro()
 }
 
 func awardLevelCompleteLife(lives, livesMax int) (newLives, newLivesMax int) {
@@ -367,6 +418,7 @@ func (g *Game) bossGameOver() {
 	g.clearThrowCharge()
 	if g.music != nil {
 		g.music.PlayLifeLost()
+		g.music.PlayLosingHorn()
 	}
 	g.lives--
 	if g.lives > 0 {
@@ -556,10 +608,6 @@ func (g *Game) levelCompleteInput() bool {
 	return g.continueInput()
 }
 
-func (g *Game) levelIntroInput() bool {
-	return g.continueInput()
-}
-
 func (g *Game) saveHighScoreInput() bool {
 	if inpututil.IsKeyJustPressed(ebiten.KeyEnter) {
 		return true
@@ -672,9 +720,7 @@ func (g *Game) Update() error {
 		}
 
 	case StateLevelIntro:
-		if g.levelIntroInput() {
-			g.beginPlaying()
-		}
+		g.updateLevelIntro()
 
 	case StatePlaying:
 		g.bird.Update()
@@ -702,13 +748,16 @@ func (g *Game) Update() error {
 		if g.state == StatePlaying {
 			target := DadsRequiredForLevel(g.level)
 			if g.levelDadsPassed >= target && g.pipes.LastDadFullyCleared(g.bird.X) {
-				g.enterBossIntro()
+				g.beginLevelExit()
 			}
 		}
 
 		if g.flapInput() {
 			g.flap()
 		}
+
+	case StateLevelExit:
+		g.updateLevelExit()
 
 	case StateBossIntro:
 		if g.meetBossInput() {
@@ -741,6 +790,7 @@ func (g *Game) Update() error {
 		}
 		if g.bossFight.ConsumeExplodeSFX() && g.music != nil {
 			g.music.PlayPlayerWin()
+			g.music.PlayYouWin()
 		}
 		if g.bossFight.ConsumeLoseSFX() && g.music != nil {
 			g.music.PlayPlayerPunchLose()
@@ -867,7 +917,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		drawPubBackground(screen, g.bgScrollX, g.decorSeed, WallpaperIndex(g.level), g.level)
 	}
 
-	showPipes := g.state == StatePlaying || g.state == StateContinue
+	showPipes := g.state == StatePlaying || g.state == StateContinue || g.state == StateLevelExit
 	if g.state != StateLoading && !g.inBossScene() {
 		if showPipes {
 			g.pipes.DrawLamps(screen)
@@ -902,8 +952,6 @@ func (g *Game) Draw(screen *ebiten.Image) {
 
 	case StateLevelIntro:
 		g.bird.Draw(screen)
-		drawGameplayHUD(screen, g)
-		drawLevelIntroPrompt(screen)
 
 	case StateBossIntro:
 		g.bird.Draw(screen)
@@ -926,8 +974,12 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		if g.bossFight.InCountdown() {
 			drawTitle(screen, g.bossFight.CountdownDisplay(), ScreenW/2, float64(ScreenH)/2-40)
 		}
+		if g.bossFight.pendingWin || g.bossFight.BoxingVictoryReady() {
+			drawBossResultBanner(screen, true, g.frames)
+		} else if g.bossFight.boxingLosePending() {
+			drawBossResultBanner(screen, false, g.frames)
+		}
 		if g.bossFight.BoxingVictoryReady() {
-			drawLabel(screen, "You win!", ScreenW/2, continueBtnY-28, ColorText)
 			x, y, w, h := continueButtonBounds()
 			drawPubButton(screen, "CONTINUE", x, y, w, h)
 		}
@@ -942,13 +994,13 @@ func (g *Game) Draw(screen *ebiten.Image) {
 
 		switch g.state {
 		case StateContinue:
-			drawContinuePrompt(screen, g.continueText)
+			drawContinuePrompt(screen, g.continueText, g.bossContinue, g.frames)
 		case StateEnterName:
 			drawEnterNameScreen(screen, g)
 		}
 	}
 
-	if g.state == StatePlaying || g.state == StateContinue {
+	if g.state == StatePlaying || g.state == StateContinue || g.state == StateLevelExit {
 		drawGameplayHUD(screen, g)
 	}
 }
@@ -1344,7 +1396,7 @@ func drawChargeFoamBubbles(screen *ebiten.Image, barX, barY, fillW, barH, power 
 }
 
 func drawLevelCompletePrompt(screen *ebiten.Image, g *Game) {
-	drawLabel(screen, fmt.Sprintf("Level %d complete!", g.level), ScreenW/2, continueBtnY-28, ColorText)
+	drawBossResultBanner(screen, true, g.frames)
 	x, y, w, h := continueButtonBounds()
 	drawPubButton(screen, "CONTINUE", x, y, w, h)
 }
@@ -1359,11 +1411,69 @@ func randomText() string {
 	return randomTexts[rand.Intn(len(randomTexts))]
 }
 
-func drawContinuePrompt(screen *ebiten.Image, text string) {
-
-	drawLabel(screen, text, ScreenW/2, continueBtnY-28, ColorText)
+func drawContinuePrompt(screen *ebiten.Image, msg string, bossLoss bool, frames int) {
+	if bossLoss {
+		drawBossResultBanner(screen, false, frames)
+	} else {
+		drawLabel(screen, msg, ScreenW/2, continueBtnY-28, ColorText)
+	}
 	x, y, w, h := continueButtonBounds()
 	drawPubButton(screen, "CONTINUE", x, y, w, h)
+}
+
+const (
+	bossResultBannerW  = 280.0
+	bossResultBannerH  = 100.0
+	bossResultFaceSize = 56.0
+)
+
+var bossResultPlaque *ebiten.Image
+
+func ensureBossResultPlaque() *ebiten.Image {
+	if bossResultPlaque != nil {
+		return bossResultPlaque
+	}
+	plaque := ebiten.NewImage(int(bossResultBannerW), int(bossResultBannerH))
+	tile := sprite.WoodFloor()
+	tw := float64(tile.Bounds().Dx())
+	th := float64(tile.Bounds().Dy())
+	if tw > 0 && th > 0 {
+		for ty := 0.0; ty < bossResultBannerH; ty += th {
+			for tx := 0.0; tx < bossResultBannerW; tx += tw {
+				op := &ebiten.DrawImageOptions{}
+				op.GeoM.Translate(tx, ty)
+				plaque.DrawImage(tile, op)
+			}
+		}
+	} else {
+		vector.DrawFilledRect(plaque, 0, 0, float32(bossResultBannerW), float32(bossResultBannerH), ColorKeg, true)
+	}
+	bossResultPlaque = plaque
+	return bossResultPlaque
+}
+
+func drawBossResultBanner(screen *ebiten.Image, won bool, frames int) {
+	cx := float64(ScreenW) / 2
+	cy := float64(continueBtnY) - 12 - bossResultBannerH/2
+	x := cx - bossResultBannerW/2
+	y := cy - bossResultBannerH/2
+
+	op := &ebiten.DrawImageOptions{}
+	op.GeoM.Translate(x, y)
+	screen.DrawImage(ensureBossResultPlaque(), op)
+	vector.StrokeRect(screen, float32(x), float32(y), float32(bossResultBannerW), float32(bossResultBannerH), 3, ColorKegEdge, true)
+
+	label := "Loser"
+	if won {
+		label = "Winner"
+	}
+	size := bossResultFaceSize * (1.0 + 0.1*sinBob(frames))
+	face := &text.GoTextFace{
+		Source: titleFace.Source,
+		Size:   size,
+	}
+	textY := cy - size*0.45
+	drawOutlinedTextAt(screen, label, face, cx, textY, text.AlignCenter, ColorText, 3)
 }
 
 func drawBossIntroPrompt(screen *ebiten.Image, level int) {
@@ -1396,14 +1506,6 @@ func drawBossIntroPrompt(screen *ebiten.Image, level int) {
 	}
 	x, y, w, h := meetBossButtonBounds()
 	drawPubButton(screen, "MEET THE LADY BOSS!", x, y, w, h)
-}
-
-func drawLevelIntroPrompt(screen *ebiten.Image) {
-	drawLabel(screen, "You are at the pub with your pals.", ScreenW/2, continueBtnY-72, ColorText)
-	drawLabel(screen, "Avoid the neighbouring PappaPub guys", ScreenW/2, continueBtnY-50, ColorText)
-	drawLabel(screen, "standing by the bar", ScreenW/2, continueBtnY-28, ColorText)
-	x, y, w, h := continueButtonBounds()
-	drawPubButton(screen, "LET'S GO!", x, y, w, h)
 }
 
 func drawHighScoresLink(screen *ebiten.Image) {
