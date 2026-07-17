@@ -220,6 +220,38 @@ func (g *Game) startGame() {
 	g.state = StateLevelIntro
 }
 
+func (g *Game) applyDebugStart() {
+	if DebugStartLevel <= 0 {
+		return
+	}
+
+	cfg := g.difficulty.Config()
+	g.bird.ApplyConfig(cfg)
+	g.bird.Reset()
+	g.pipes.ApplyConfig(cfg)
+	g.pipes.Reset()
+	g.level = DebugStartLevel
+	g.levelDadsPassed = 0
+	g.finalDadAttempt = false
+	g.bossContinue = false
+	g.rawScore = 0
+	g.lives = MaxLives
+	g.livesMax = MaxLives
+	g.invincibleFrames = 0
+	g.playerName = ""
+	g.bgScrollX = 0
+	g.decorSeed = rand.Int()
+
+	if DebugStartBoss != 0 {
+		g.enterBossIntro()
+		return
+	}
+
+	g.pipes.SetSpawnLimit(DadsRequiredForLevel(g.level))
+	g.state = StatePlaying
+	g.flap()
+}
+
 func (g *Game) beginPlaying() {
 	g.state = StatePlaying
 	g.flap()
@@ -600,10 +632,12 @@ func (g *Game) updateLoading() {
 			g.music = res.manager
 		}
 		g.state = StateReady
+		g.applyDebugStart()
 	default:
 		if g.loadFrames >= loadTimeoutFrames {
 			log.Printf("audio load timeout after %d frames; starting without music", g.loadFrames)
 			g.state = StateReady
+			g.applyDebugStart()
 		}
 	}
 }

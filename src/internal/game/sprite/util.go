@@ -6,6 +6,7 @@ import (
 )
 
 const AlphaThreshold = 16
+const BlackKeyThreshold = 8
 
 func ToRGBA(src image.Image) *image.RGBA {
 	b := src.Bounds()
@@ -37,4 +38,17 @@ func MeasureRGBA(img *image.RGBA) (feetPad, contentH float64) {
 		return 0, float64(h)
 	}
 	return float64(h - 1 - maxY), float64(maxY - minY + 1)
+}
+
+func KeyBlackTransparent(src *image.RGBA) *image.RGBA {
+	b := src.Bounds()
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		for x := b.Min.X; x < b.Max.X; x++ {
+			c := src.RGBAAt(x, y)
+			if c.R <= BlackKeyThreshold && c.G <= BlackKeyThreshold && c.B <= BlackKeyThreshold {
+				src.SetRGBA(x, y, color.RGBA{})
+			}
+		}
+	}
+	return src
 }

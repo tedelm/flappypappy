@@ -122,6 +122,7 @@ type BossFight struct {
 	laughCooldown   int
 	sprintFrames    int
 	sprintCooldown  int
+	runAnimTick     int
 }
 
 func NewBossFight() *BossFight {
@@ -165,6 +166,7 @@ func (bf *BossFight) Reset(level int) {
 	bf.playerSpeed = 0
 	bf.lead = 0
 	bf.scrollX = 0
+	bf.runAnimTick = 0
 
 	if BossIsOutrun(level) {
 		bf.mode = bossModeOutrun
@@ -775,6 +777,9 @@ func (bf *BossFight) updateOutrun() (won, lost bool) {
 	} else if bf.playerSpeed < outrunCoastSpeed {
 		bf.playerSpeed = outrunCoastSpeed
 	}
+	if bf.playerSpeed > outrunCoastSpeed {
+		bf.runAnimTick++
+	}
 
 	duration := bf.outrunDuration
 	if duration <= 0 {
@@ -849,6 +854,13 @@ func (bf *BossFight) Draw(screen *ebiten.Image) {
 	bf.drawParticles(screen)
 }
 
+func (bf *BossFight) runningFrameIndex() int {
+	if bf.playerSpeed <= outrunCoastSpeed {
+		return 0
+	}
+	return sprite.RunningFrameIndexFromTick(int64(bf.runAnimTick))
+}
+
 func drawBossPlayer(screen *ebiten.Image, chargePower float64) {
 	if chargePower < 0 {
 		chargePower = 0
@@ -860,7 +872,14 @@ func drawBossPlayer(screen *ebiten.Image, chargePower float64) {
 }
 
 func drawOutrunPlayer(screen *ebiten.Image, bf *BossFight) {
-	const runW, runH = 168.0, 144.0
+	const runW, runH = 201.6, 172.8 // 20% larger than 168×144
+	cy := float64(FloorSurfaceY) - outrunGroundClearance - runH/2
+
+	if bf.InCountdown() {
+		drawStandingPlayer(screen, bf.playerX+28, cy, runW, runH, 0)
+		return
+	}
+
 	// Slight bob and forward lean based on run speed.
 	bob := math.Sin(bf.scrollX * 0.18) * 3
 	speedFrac := (bf.playerSpeed - outrunCoastSpeed) / (outrunMaxPlayerSpeed - outrunCoastSpeed)
@@ -871,7 +890,5 @@ func drawOutrunPlayer(screen *ebiten.Image, bf *BossFight) {
 		speedFrac = 1
 	}
 	tilt := -0.15 - 0.25*speedFrac
-	// Center so feet sit near the ground (draw size is larger than BirdHeight).
-	cy := float64(FloorSurfaceY) - outrunGroundClearance - runH/2 + bob
-	drawRunningPlayer(screen, bf.playerX+28, cy, runW, runH, tilt)
+	drawRunningPlayer(screen, bf.playerX+28, cy+bob, runW, runH, tilt, bf.runningFrameIndex())
 }

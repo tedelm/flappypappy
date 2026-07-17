@@ -4,22 +4,20 @@ import (
 	"bytes"
 	_ "embed"
 	"image"
-	"image/color"
 	"image/png"
 	"sync"
 
 	"github.com/hajimehoshi/ebiten/v2"
 )
 
-//go:embed running.png
+//go:embed player_running.png
 var runningPNG []byte
 
 const (
-	RunningFrameCols  = 4
+	RunningFrameCols  = 5
 	RunningFrameRows  = 1
 	RunningFrameCount = RunningFrameCols * RunningFrameRows
-	RunningFrameTicks = 6
-	runningBlackKey   = 8
+	RunningFrameTicks = 12
 )
 
 var (
@@ -35,7 +33,7 @@ func ensureRunningLoaded() {
 		if err != nil {
 			panic(err)
 		}
-		sheet := keyBlackTransparent(ToRGBA(img))
+		sheet := KeyBlackTransparent(ToRGBA(img))
 		b := sheet.Bounds()
 		sheetW, sheetH := b.Dx(), b.Dy()
 
@@ -60,19 +58,6 @@ func ensureRunningLoaded() {
 	})
 }
 
-func keyBlackTransparent(src *image.RGBA) *image.RGBA {
-	b := src.Bounds()
-	for y := b.Min.Y; y < b.Max.Y; y++ {
-		for x := b.Min.X; x < b.Max.X; x++ {
-			c := src.RGBAAt(x, y)
-			if c.R <= runningBlackKey && c.G <= runningBlackKey && c.B <= runningBlackKey {
-				src.SetRGBA(x, y, color.RGBA{})
-			}
-		}
-	}
-	return src
-}
-
 func runningCellRect(sheetW, sheetH, i int) image.Rectangle {
 	col := i % RunningFrameCols
 	row := i / RunningFrameCols
@@ -89,6 +74,10 @@ func RunningFrame(i int) *ebiten.Image {
 }
 
 func RunningFrameIndex(tick int64) int {
+	return RunningFrameIndexFromTick(tick)
+}
+
+func RunningFrameIndexFromTick(tick int64) int {
 	return int(tick/int64(RunningFrameTicks)) % RunningFrameCount
 }
 

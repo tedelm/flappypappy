@@ -8,10 +8,10 @@ import (
 )
 
 const (
-	LevelStartDads     = 7 // 7
-	LevelDadsIncrement = 6 // 6
+	LevelStartDads     = 1 // 7
+	LevelDadsIncrement = 0 // 6
 
-	BossHitsRequired  = 4  // 4
+	BossHitsRequired  = 1  // 4
 	BossThrowsAllowed = 10 // 10
 
 	// Outrun chase: every 3rd level; base duration 20s at 60 TPS.
