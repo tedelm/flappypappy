@@ -89,6 +89,7 @@ type Boss struct {
 	tipTargetY    float64
 	shakeTimer    int
 	faceRight     bool
+	sprinting     bool
 }
 
 type BossFight struct {
@@ -119,6 +120,8 @@ type BossFight struct {
 	tapSFX          bool
 	laughSFX        bool
 	laughCooldown   int
+	sprintFrames    int
+	sprintCooldown  int
 }
 
 func NewBossFight() *BossFight {
@@ -151,6 +154,8 @@ func (bf *BossFight) Reset(level int) {
 	bf.tapSFX = false
 	bf.laughSFX = false
 	bf.laughCooldown = 0
+	bf.sprintFrames = 0
+	bf.sprintCooldown = 0
 	bf.level = level
 	bf.outrunDuration = 0
 	bf.timerFrames = 0
@@ -167,6 +172,7 @@ func (bf *BossFight) Reset(level int) {
 		bf.timerFrames = bf.outrunDuration
 		bf.countdownFrames = OutrunCountdownTotalFrames()
 		bf.laughCooldown = outrunLaughIntervalFrames()
+		bf.sprintCooldown = outrunSprintCooldownFrames()
 		bf.playerX = outrunPlayerScreenX
 		bf.playerY = float64(FloorSurfaceY) - BirdHeight/2 - outrunGroundClearance
 		bf.playerSpeed = outrunCoastSpeed
@@ -205,6 +211,10 @@ func (bf *BossFight) Reset(level int) {
 
 func (bf *BossFight) IsOutrun() bool {
 	return bf.mode == bossModeOutrun
+}
+
+func (bf *BossFight) IsSprinting() bool {
+	return bf.mode == bossModeOutrun && bf.sprintFrames > 0
 }
 
 func (bf *BossFight) InCountdown() bool {
@@ -369,6 +379,9 @@ func (b *Boss) Draw(screen *ebiten.Image) {
 	}
 
 	frameIdx := sprite.AngryWomanFrameIndex(ebiten.Tick())
+	if b.sprinting {
+		frameIdx = sprite.AngryWomanFrameIndex(ebiten.Tick() * 2)
+	}
 	if b.defeated {
 		frameIdx = b.deathFrame
 	}
@@ -775,9 +788,14 @@ func (bf *BossFight) updateOutrun() (won, lost bool) {
 		progress = 1
 	}
 	wifeClose := OutrunWifeCloseBaseForLevel(bf.level) + OutrunWifeCloseRiseForLevel(bf.level)*progress
+	wifeClose *= OutrunDifficultyMult(OutrunChaseIndex(bf.level))
+
+	bf.updateOutrunSprint(&wifeClose)
+
 	bf.lead -= wifeClose
 	bf.scrollX += bf.playerSpeed
 	bf.syncOutrunBossPos()
+	bf.boss.sprinting = bf.sprintFrames > 0
 
 	bf.timerFrames--
 	if bf.lead <= outrunCatchLead {
@@ -796,6 +814,24 @@ func (bf *BossFight) updateOutrun() (won, lost bool) {
 		}
 	}
 	return false, false
+}
+
+func (bf *BossFight) updateOutrunSprint(wifeClose *float64) {
+	if bf.sprintFrames > 0 {
+		*wifeClose *= outrunSprintCloseMult
+		bf.sprintFrames--
+		if bf.sprintFrames == 0 {
+			bf.sprintCooldown = outrunSprintCooldownFrames()
+		}
+		return
+	}
+	if bf.sprintCooldown > 0 {
+		bf.sprintCooldown--
+		if bf.sprintCooldown == 0 {
+			bf.sprintFrames = outrunSprintDurationFrames()
+			bf.laughSFX = true
+		}
+	}
 }
 
 func (bf *BossFight) syncOutrunBossPos() {

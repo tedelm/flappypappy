@@ -1,6 +1,7 @@
 package game
 
 import (
+	"math"
 	"math/rand"
 
 	"flappy/internal/game/sprite"
@@ -10,8 +11,8 @@ const (
 	LevelStartDads     = 7 // 7
 	LevelDadsIncrement = 6 // 6
 
-	BossHitsRequired  = 4
-	BossThrowsAllowed = 10
+	BossHitsRequired  = 4  // 4
+	BossThrowsAllowed = 10 // 10
 
 	// Outrun chase: every 3rd level; base duration 20s at 60 TPS.
 	OutrunDurationFrames = 1200
@@ -43,6 +44,13 @@ const (
 	// Chase laugh SFX: random interval 3–6s at 60 TPS.
 	outrunLaughMinFrames = 180
 	outrunLaughMaxFrames = 360
+
+	// Boss sprint bursts during outrun chase.
+	outrunSprintCooldownMin = 180
+	outrunSprintCooldownMax = 360
+	outrunSprintDurationMin = 45
+	outrunSprintDurationMax = 90
+	outrunSprintCloseMult   = 1.75
 
 	bossBaseMoveSpeed   = 2.2
 	bossMoveSpeedPerLvl = 0.25
@@ -131,6 +139,15 @@ func OutrunTapLeadBoostForLevel(level int) float64 {
 	return boost
 }
 
+// OutrunDifficultyMult scales how fast the boss closes the gap each chase.
+// Chase 1 (level 3): 2.0×. Each subsequent chase multiplies by 1.15.
+func OutrunDifficultyMult(chaseIndex int) float64 {
+	if chaseIndex < 1 {
+		chaseIndex = 1
+	}
+	return 1.7 * math.Pow(1.10, float64(chaseIndex-1))
+}
+
 func OutrunCountdownTotalFrames() int {
 	return OutrunCountdownSecs*outrunSecFrames + outrunGoHoldFrames
 }
@@ -138,6 +155,16 @@ func OutrunCountdownTotalFrames() int {
 func outrunLaughIntervalFrames() int {
 	span := outrunLaughMaxFrames - outrunLaughMinFrames + 1
 	return outrunLaughMinFrames + rand.Intn(span)
+}
+
+func outrunSprintCooldownFrames() int {
+	span := outrunSprintCooldownMax - outrunSprintCooldownMin + 1
+	return outrunSprintCooldownMin + rand.Intn(span)
+}
+
+func outrunSprintDurationFrames() int {
+	span := outrunSprintDurationMax - outrunSprintDurationMin + 1
+	return outrunSprintDurationMin + rand.Intn(span)
 }
 
 func BossHitsForLevel(level int) int {
