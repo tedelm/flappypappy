@@ -48,6 +48,7 @@ const (
 const (
 	bossModeThrow = iota
 	bossModeOutrun
+	bossModeBoxing
 )
 
 var bossExplodeOrange = color.RGBA{255, 140, 40, 255}
@@ -89,10 +90,12 @@ type Boss struct {
 	tipTargetY    float64
 	shakeTimer    int
 	faceRight     bool
+	sprinting     bool
 }
 
 type BossFight struct {
 	mode          int
+	variant       int
 	throwsUsed    int
 	hits          int
 	hitsRequired  int
@@ -104,7 +107,25 @@ type BossFight struct {
 	deathTimer    int
 	explodeSFX    bool
 	hitSFX        bool
+	loseSFX       bool
 	boss          Boss
+
+	// Neighbour duel (level 4 alternating turns).
+	duelTurn          int
+	lastThrowPower    float64
+	playerThrowFrame  int
+	playerThrowTick   int
+	playerThrowing    bool
+	glassSpawned      bool
+	enemyThrowFrame   int
+	enemyThrowTick    int
+	enemyThrowing     bool
+	footballSpawned   bool
+	enemyProjectile   *FootballProjectile
+	footballHits      int
+	lifeLostPending   bool
+	playerInvincible  int
+	playerVY          float64
 
 	// Outrun (scrolling race every 3rd level).
 	level           int
@@ -119,6 +140,15 @@ type BossFight struct {
 	tapSFX          bool
 	laughSFX        bool
 	laughCooldown   int
+	sprintFrames    int
+	sprintCooldown  int
+	runAnimTick     int
+
+	// Boxing victory hold (paused win pose until CONTINUE).
+	boxingVictoryHold    bool
+	boxingFramesSinceTap int
+	boxingStamina        float64
+	boxingExhausted      bool
 }
 
 func NewBossFight() *BossFight {
@@ -148,9 +178,19 @@ func (bf *BossFight) Reset(level int) {
 	bf.deathTimer = 0
 	bf.explodeSFX = false
 	bf.hitSFX = false
+	bf.loseSFX = false
+	bf.variant = BossVariantLady
+	bf.duelTurn = duelTurnPlayer
+	bf.enemyProjectile = nil
+	bf.lifeLostPending = false
+	bf.footballHits = 0
+	bf.playerInvincible = 0
+	bf.playerVY = 0
 	bf.tapSFX = false
 	bf.laughSFX = false
 	bf.laughCooldown = 0
+	bf.sprintFrames = 0
+	bf.sprintCooldown = 0
 	bf.level = level
 	bf.outrunDuration = 0
 	bf.timerFrames = 0
@@ -160,6 +200,11 @@ func (bf *BossFight) Reset(level int) {
 	bf.playerSpeed = 0
 	bf.lead = 0
 	bf.scrollX = 0
+	bf.runAnimTick = 0
+	bf.boxingVictoryHold = false
+	bf.boxingFramesSinceTap = boxingDadSuppressFrames
+	bf.boxingStamina = boxingStaminaMax
+	bf.boxingExhausted = false
 
 	if BossIsOutrun(level) {
 		bf.mode = bossModeOutrun
@@ -167,6 +212,7 @@ func (bf *BossFight) Reset(level int) {
 		bf.timerFrames = bf.outrunDuration
 		bf.countdownFrames = OutrunCountdownTotalFrames()
 		bf.laughCooldown = outrunLaughIntervalFrames()
+		bf.sprintCooldown = outrunSprintCooldownFrames()
 		bf.playerX = outrunPlayerScreenX
 		bf.playerY = float64(FloorSurfaceY) - BirdHeight/2 - outrunGroundClearance
 		bf.playerSpeed = outrunCoastSpeed
@@ -183,7 +229,16 @@ func (bf *BossFight) Reset(level int) {
 		return
 	}
 
+	if BossIsBoxing(level) {
+		bf.resetBoxingBoss(level)
+		return
+	}
+
 	bf.mode = bossModeThrow
+	if BossVariantForLevel(level) == BossVariantNeighbour {
+		bf.resetNeighbourBoss(level)
+		return
+	}
 	bf.boss = Boss{
 		X:           homeX,
 		Y:           bossPlayerY,
@@ -207,8 +262,12 @@ func (bf *BossFight) IsOutrun() bool {
 	return bf.mode == bossModeOutrun
 }
 
+func (bf *BossFight) IsSprinting() bool {
+	return bf.mode == bossModeOutrun && bf.sprintFrames > 0
+}
+
 func (bf *BossFight) InCountdown() bool {
-	return bf.mode == bossModeOutrun && bf.countdownFrames > 0
+	return (bf.mode == bossModeOutrun || bf.mode == bossModeBoxing) && bf.countdownFrames > 0
 }
 
 // CountdownDisplay returns "3"/"2"/"1"/"GO!" while counting down, else "".
@@ -245,6 +304,44 @@ func (bf *BossFight) LeadFrac() float64 {
 		return 0
 	}
 	f := (bf.lead - outrunCatchLead) / span
+	if f < 0 {
+		return 0
+	}
+	if f > 1 {
+		return 1
+	}
+	return f
+}
+
+// BossHPFrac is remaining boss HP 0..1 (boxing uses lead as HP).
+func (bf *BossFight) BossHPFrac() float64 {
+	if boxingBossMaxHP <= 0 {
+		return 0
+	}
+	f := bf.lead / boxingBossMaxHP
+	if f < 0 {
+		return 0
+	}
+	if f > 1 {
+		return 1
+	}
+	return f
+}
+
+// TimerFrac is remaining fight deadline 0..1.
+func (bf *BossFight) TimerFrac() float64 {
+	dur := bf.outrunDuration
+	if dur <= 0 {
+		if bf.IsBoxing() {
+			dur = BoxingDurationFrames
+		} else {
+			dur = OutrunDurationFramesForLevel(bf.level)
+		}
+	}
+	if dur <= 0 {
+		return 0
+	}
+	f := float64(bf.TimerRemaining()) / float64(dur)
 	if f < 0 {
 		return 0
 	}
@@ -369,6 +466,9 @@ func (b *Boss) Draw(screen *ebiten.Image) {
 	}
 
 	frameIdx := sprite.AngryWomanFrameIndex(ebiten.Tick())
+	if b.sprinting {
+		frameIdx = sprite.AngryWomanFrameIndex(ebiten.Tick() * 2)
+	}
 	if b.defeated {
 		frameIdx = b.deathFrame
 	}
@@ -506,15 +606,38 @@ func (bf *BossFight) drawParticles(screen *ebiten.Image) {
 }
 
 func (bf *BossFight) CanThrow() bool {
-	return bf.mode == bossModeThrow && !bf.pendingWin && bf.throwsUsed < bf.throwsAllowed && len(bf.projectiles) == 0
+	if bf.pendingWin {
+		return false
+	}
+	if bf.throwsUsed >= bf.throwsAllowed {
+		return false
+	}
+	if len(bf.projectiles) > 0 {
+		return false
+	}
+	if bf.IsDuel() {
+		return bf.duelTurn == duelTurnPlayer && !bf.playerThrowing
+	}
+	return bf.mode == bossModeThrow
 }
 
 func (bf *BossFight) CanTap() bool {
-	return bf.mode == bossModeOutrun && !bf.pendingWin && !bf.InCountdown() && bf.timerFrames > 0
+	tapMode := bf.mode == bossModeOutrun || bf.mode == bossModeBoxing
+	if bf.boxingLosePending() || bf.BoxingVictoryReady() {
+		return false
+	}
+	if bf.IsBoxing() && bf.boxingExhausted {
+		return false
+	}
+	return tapMode && !bf.pendingWin && !bf.InCountdown() && bf.timerFrames > 0
 }
 
 func (bf *BossFight) Tap() {
 	if !bf.CanTap() {
+		return
+	}
+	if bf.IsBoxing() {
+		bf.boxingTap()
 		return
 	}
 	bf.lead += OutrunTapLeadBoostForLevel(bf.level)
@@ -561,6 +684,10 @@ func ThrowChargeMaxFrames() int {
 
 func (bf *BossFight) Throw(power float64) {
 	if !bf.CanThrow() {
+		return
+	}
+	if bf.IsDuel() {
+		bf.duelThrow(power)
 		return
 	}
 	if power < 0 {
@@ -633,6 +760,14 @@ func (bf *BossFight) ConsumeHitSFX() bool {
 	return true
 }
 
+func (bf *BossFight) ConsumeLoseSFX() bool {
+	if !bf.loseSFX {
+		return false
+	}
+	bf.loseSFX = false
+	return true
+}
+
 func (bf *BossFight) startDeath() {
 	bf.pendingWin = true
 	bf.deathPhase = deathPhaseTip
@@ -692,11 +827,22 @@ func (bf *BossFight) Update() (won, lost bool) {
 	bf.updateParticles()
 
 	if bf.pendingWin {
+		if bf.IsBoxing() {
+			return bf.updateBoxingWin()
+		}
 		return bf.updateDeath()
 	}
 
 	if bf.mode == bossModeOutrun {
 		return bf.updateOutrun()
+	}
+
+	if bf.mode == bossModeBoxing {
+		return bf.updateBoxing()
+	}
+
+	if bf.IsDuel() {
+		return bf.updateDuel()
 	}
 
 	bf.boss.Update()
@@ -762,6 +908,9 @@ func (bf *BossFight) updateOutrun() (won, lost bool) {
 	} else if bf.playerSpeed < outrunCoastSpeed {
 		bf.playerSpeed = outrunCoastSpeed
 	}
+	if bf.playerSpeed > outrunCoastSpeed {
+		bf.runAnimTick++
+	}
 
 	duration := bf.outrunDuration
 	if duration <= 0 {
@@ -775,9 +924,14 @@ func (bf *BossFight) updateOutrun() (won, lost bool) {
 		progress = 1
 	}
 	wifeClose := OutrunWifeCloseBaseForLevel(bf.level) + OutrunWifeCloseRiseForLevel(bf.level)*progress
+	wifeClose *= OutrunDifficultyMult(OutrunChaseIndex(bf.level))
+
+	bf.updateOutrunSprint(&wifeClose)
+
 	bf.lead -= wifeClose
 	bf.scrollX += bf.playerSpeed
 	bf.syncOutrunBossPos()
+	bf.boss.sprinting = bf.sprintFrames > 0
 
 	bf.timerFrames--
 	if bf.lead <= outrunCatchLead {
@@ -798,19 +952,57 @@ func (bf *BossFight) updateOutrun() (won, lost bool) {
 	return false, false
 }
 
+func (bf *BossFight) updateOutrunSprint(wifeClose *float64) {
+	if bf.sprintFrames > 0 {
+		*wifeClose *= outrunSprintCloseMult
+		bf.sprintFrames--
+		if bf.sprintFrames == 0 {
+			bf.sprintCooldown = outrunSprintCooldownFrames()
+		}
+		return
+	}
+	if bf.sprintCooldown > 0 {
+		bf.sprintCooldown--
+		if bf.sprintCooldown == 0 {
+			bf.sprintFrames = outrunSprintDurationFrames()
+			bf.laughSFX = true
+		}
+	}
+}
+
 func (bf *BossFight) syncOutrunBossPos() {
 	bf.boss.X = bf.playerX - bf.lead - bf.boss.width*0.35
 	bf.boss.Y = float64(FloorSurfaceY) - bf.boss.height - outrunGroundClearance
 }
 
 func (bf *BossFight) Draw(screen *ebiten.Image) {
-	bf.boss.Draw(screen)
-	if bf.mode == bossModeThrow {
+	switch {
+	case bf.IsBoxing():
+		bf.drawDadFighter(screen)
+	case bf.IsDuel():
+		bf.drawNeighbourBoss(screen)
 		for _, p := range bf.projectiles {
-			drawProjectile(screen, p)
+			drawThrownGlassProjectile(screen, p)
+		}
+		if bf.enemyProjectile != nil {
+			drawFootballProjectile(screen, bf.enemyProjectile)
+		}
+	default:
+		bf.boss.Draw(screen)
+		if bf.mode == bossModeThrow {
+			for _, p := range bf.projectiles {
+				drawProjectile(screen, p)
+			}
 		}
 	}
 	bf.drawParticles(screen)
+}
+
+func (bf *BossFight) runningFrameIndex() int {
+	if bf.playerSpeed <= outrunCoastSpeed {
+		return 0
+	}
+	return sprite.RunningFrameIndexFromTick(int64(bf.runAnimTick))
 }
 
 func drawBossPlayer(screen *ebiten.Image, chargePower float64) {
@@ -824,7 +1016,14 @@ func drawBossPlayer(screen *ebiten.Image, chargePower float64) {
 }
 
 func drawOutrunPlayer(screen *ebiten.Image, bf *BossFight) {
-	const runW, runH = 168.0, 144.0
+	const runW, runH = 201.6, 172.8 // 20% larger than 168×144
+	cy := float64(FloorSurfaceY) - outrunGroundClearance - runH/2
+
+	if bf.InCountdown() {
+		drawStandingPlayer(screen, bf.playerX+28, cy, runW, runH, 0)
+		return
+	}
+
 	// Slight bob and forward lean based on run speed.
 	bob := math.Sin(bf.scrollX * 0.18) * 3
 	speedFrac := (bf.playerSpeed - outrunCoastSpeed) / (outrunMaxPlayerSpeed - outrunCoastSpeed)
@@ -835,7 +1034,5 @@ func drawOutrunPlayer(screen *ebiten.Image, bf *BossFight) {
 		speedFrac = 1
 	}
 	tilt := -0.15 - 0.25*speedFrac
-	// Center so feet sit near the ground (draw size is larger than BirdHeight).
-	cy := float64(FloorSurfaceY) - outrunGroundClearance - runH/2 + bob
-	drawRunningPlayer(screen, bf.playerX+28, cy, runW, runH, tilt)
+	drawRunningPlayer(screen, bf.playerX+28, cy+bob, runW, runH, tilt, bf.runningFrameIndex())
 }

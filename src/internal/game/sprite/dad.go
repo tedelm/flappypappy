@@ -14,7 +14,18 @@ import (
 //go:embed dad.png
 var dadPNG []byte
 
+//go:embed dad_2.png
+var dad2PNG []byte
+
+//go:embed dad_3.png
+var dad3PNG []byte
+
+//go:embed dad_4.png
+var dad4PNG []byte
+
 const (
+	DadVariantCount = 4
+
 	FrameCols  = 5
 	FrameRows  = 2
 	FrameCount = FrameCols * FrameRows
@@ -22,39 +33,41 @@ const (
 )
 
 var (
-	loadOnce    sync.Once
-	dadFrames   [FrameCount]*ebiten.Image
-	dadFeetPad  float64
-	dadContentH float64
+	loadOnce     sync.Once
+	dadFrames    [DadVariantCount][FrameCount]*ebiten.Image
+	dadFeetPad   [DadVariantCount][FrameCount]float64
+	dadContentH  [DadVariantCount][FrameCount]float64
+	dadContentW  [DadVariantCount][FrameCount]float64
+	dadSheetPNGs = [][]byte{dadPNG, dad2PNG, dad3PNG, dad4PNG}
 )
 
 func ensureLoaded() {
 	loadOnce.Do(func() {
-		img, err := png.Decode(bytes.NewReader(dadPNG))
-		if err != nil {
-			panic(err)
-		}
-		sheet := ToRGBA(img)
-		b := sheet.Bounds()
-		sheetW, sheetH := b.Dx(), b.Dy()
-
-		for i := 0; i < FrameCount; i++ {
-			rect := cellRect(sheetW, sheetH, i)
-			cell := cropRGBA(sheet, rect)
-
-			feetPad, contentH := MeasureRGBA(cell)
-			if feetPad > dadFeetPad {
-				dadFeetPad = feetPad
+		for v, pngBytes := range dadSheetPNGs {
+			img, err := png.Decode(bytes.NewReader(pngBytes))
+			if err != nil {
+				panic(err)
 			}
-			if contentH > dadContentH {
-				dadContentH = contentH
+			sheet := KeyBlackTransparent(ToRGBA(img))
+			b := sheet.Bounds()
+			sheetW, sheetH := b.Dx(), b.Dy()
+
+			for i := 0; i < FrameCount; i++ {
+				rect := cellRect(sheetW, sheetH, i)
+				cell := cropRGBA(sheet, rect)
+
+				fp, ch, cw := MeasureRGBASize(cell)
+				if ch == 0 {
+					ch = float64(sheetH / FrameRows)
+				}
+				if cw == 0 {
+					cw = float64(sheetW / FrameCols)
+				}
+				dadFeetPad[v][i] = fp
+				dadContentH[v][i] = ch
+				dadContentW[v][i] = cw
+				dadFrames[v][i] = ebiten.NewImageFromImage(cell)
 			}
-
-			dadFrames[i] = ebiten.NewImageFromImage(cell)
-		}
-
-		if dadContentH == 0 {
-			dadContentH = float64(sheetH / FrameRows)
 		}
 	})
 }
@@ -76,21 +89,41 @@ func cellRect(sheetW, sheetH, i int) image.Rectangle {
 	return image.Rect(x0, y0, x1, y1)
 }
 
-func Frame(i int) *ebiten.Image {
+func clampDadVariant(variant int) int {
+	if variant < 0 || variant >= DadVariantCount {
+		return 0
+	}
+	return variant
+}
+
+func clampDadFrame(frame int) int {
+	if frame < 0 {
+		return 0
+	}
+	return frame % FrameCount
+}
+
+func Frame(variant, i int) *ebiten.Image {
 	ensureLoaded()
-	return dadFrames[i%FrameCount]
+	v := clampDadVariant(variant)
+	return dadFrames[v][clampDadFrame(i)]
 }
 
 func FrameIndex(tick int64) int {
 	return int(tick/int64(FrameTicks)) % FrameCount
 }
 
-func FeetPad() float64 {
+func FeetPad(variant, frame int) float64 {
 	ensureLoaded()
-	return dadFeetPad
+	return dadFeetPad[clampDadVariant(variant)][clampDadFrame(frame)]
 }
 
-func ContentH() float64 {
+func ContentH(variant, frame int) float64 {
 	ensureLoaded()
-	return dadContentH
+	return dadContentH[clampDadVariant(variant)][clampDadFrame(frame)]
+}
+
+func ContentW(variant, frame int) float64 {
+	ensureLoaded()
+	return dadContentW[clampDadVariant(variant)][clampDadFrame(frame)]
 }

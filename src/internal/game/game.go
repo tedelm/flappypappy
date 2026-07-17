@@ -220,6 +220,38 @@ func (g *Game) startGame() {
 	g.state = StateLevelIntro
 }
 
+func (g *Game) applyDebugStart() {
+	if DebugStartLevel <= 0 {
+		return
+	}
+
+	cfg := g.difficulty.Config()
+	g.bird.ApplyConfig(cfg)
+	g.bird.Reset()
+	g.pipes.ApplyConfig(cfg)
+	g.pipes.Reset()
+	g.level = DebugStartLevel
+	g.levelDadsPassed = 0
+	g.finalDadAttempt = false
+	g.bossContinue = false
+	g.rawScore = 0
+	g.lives = MaxLives
+	g.livesMax = MaxLives
+	g.invincibleFrames = 0
+	g.playerName = ""
+	g.bgScrollX = 0
+	g.decorSeed = rand.Int()
+
+	if DebugStartBoss != 0 {
+		g.enterBossIntro()
+		return
+	}
+
+	g.pipes.SetSpawnLimit(DadsRequiredForLevel(g.level))
+	g.state = StatePlaying
+	g.flap()
+}
+
 func (g *Game) beginPlaying() {
 	g.state = StatePlaying
 	g.flap()
@@ -600,10 +632,12 @@ func (g *Game) updateLoading() {
 			g.music = res.manager
 		}
 		g.state = StateReady
+		g.applyDebugStart()
 	default:
 		if g.loadFrames >= loadTimeoutFrames {
 			log.Printf("audio load timeout after %d frames; starting without music", g.loadFrames)
 			g.state = StateReady
+			g.applyDebugStart()
 		}
 	}
 }
@@ -660,7 +694,7 @@ func (g *Game) Update() error {
 			g.invincibleFrames--
 		} else {
 			bx, by, bw, bh := g.bird.Bounds()
-			if g.pipes.Collides(bx, by, bw, bh) || g.hitBounds(bx, by, bw, bh) {
+			if g.pipes.Collides(bx, by, bw, bh, DadVariantForLevel(g.level, g.decorSeed)) || g.hitBounds(bx, by, bw, bh) {
 				g.loseLife()
 			}
 		}
@@ -682,16 +716,52 @@ func (g *Game) Update() error {
 		}
 
 	case StateBossFight:
+		if g.bossFight.BoxingVictoryReady() {
+			g.bossFight.Update() // keep win pose anim looping
+			if g.levelCompleteInput() {
+				g.clearThrowCharge()
+				g.advanceToNextLevel()
+			}
+			break
+		}
+		if g.bossFight.CanDodge() && g.flapInput() {
+			g.bossFight.DuelFlap()
+			if g.music != nil {
+				g.music.PlayJump()
+			}
+		}
 		won, lost := g.bossFight.Update()
 		if g.bossFight.ConsumeHitSFX() && g.music != nil {
-			g.music.PlayGlassBreak()
-			g.music.PlayWrongWithYou()
+			if g.bossFight.IsBoxing() {
+				g.music.PlayNeighbourPunch()
+			} else {
+				g.music.PlayGlassBreak()
+				g.music.PlayWrongWithYou()
+			}
 		}
 		if g.bossFight.ConsumeExplodeSFX() && g.music != nil {
 			g.music.PlayPlayerWin()
 		}
+		if g.bossFight.ConsumeLoseSFX() && g.music != nil {
+			g.music.PlayPlayerPunchLose()
+		}
 		if g.bossFight.ConsumeLaughSFX() && g.music != nil {
 			g.music.PlayLaughingRun()
+		}
+		if g.bossFight.ConsumeLifeLost() {
+			if g.music != nil {
+				g.music.PlayLifeLost()
+			}
+			g.lives--
+			if g.lives <= 0 {
+				g.clearThrowCharge()
+				if g.music != nil {
+					g.music.PlayGameOver()
+				}
+				g.playerName = ""
+				g.state = StateEnterName
+				g.nameInputOpen = true
+			}
 		}
 		if won {
 			g.clearThrowCharge()
@@ -699,7 +769,7 @@ func (g *Game) Update() error {
 		} else if lost {
 			g.clearThrowCharge()
 			g.bossGameOver()
-		} else if g.bossFight.IsOutrun() {
+		} else if g.bossFight.IsOutrun() || g.bossFight.IsBoxing() {
 			if !g.bossFight.InCountdown() && g.flapInput() {
 				g.bossFight.Tap()
 				if g.music != nil {
@@ -792,7 +862,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		if g.state == StateBossFight && g.bossFight.IsOutrun() {
 			scroll = g.bossFight.ScrollX()
 		}
-		drawBossBackground(screen, scroll)
+		drawBossBackground(screen, scroll, g.level)
 	} else {
 		drawPubBackground(screen, g.bgScrollX, g.decorSeed, WallpaperIndex(g.level), g.level)
 	}
@@ -805,7 +875,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		drawWoodenFloor(screen)
 		drawPubStools(screen, g.bgScrollX, g.decorSeed)
 		if showPipes {
-			g.pipes.DrawDads(screen)
+			g.pipes.DrawDads(screen, DadVariantForLevel(g.level, g.decorSeed))
 		}
 	}
 
@@ -843,6 +913,10 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	case StateBossFight:
 		if g.bossFight.IsOutrun() {
 			drawOutrunPlayer(screen, g.bossFight)
+		} else if g.bossFight.IsBoxing() {
+			drawBoxingPlayer(screen, g.bossFight)
+		} else if g.bossFight.IsDuel() {
+			drawDuelPlayer(screen, g.bossFight, g.throwChargePower())
 		} else {
 			drawBossPlayer(screen, g.throwChargePower())
 		}
@@ -851,6 +925,11 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		drawBossHUD(screen, g.bossFight, g.throwChargePower(), g.throwCharging)
 		if g.bossFight.InCountdown() {
 			drawTitle(screen, g.bossFight.CountdownDisplay(), ScreenW/2, float64(ScreenH)/2-40)
+		}
+		if g.bossFight.BoxingVictoryReady() {
+			drawLabel(screen, "You win!", ScreenW/2, continueBtnY-28, ColorText)
+			x, y, w, h := continueButtonBounds()
+			drawPubButton(screen, "CONTINUE", x, y, w, h)
 		}
 
 	case StateLevelComplete:
@@ -941,6 +1020,17 @@ func drawGlassRow(screen *ebiten.Image, filled, total int, centered bool) {
 		return
 	}
 	full := sprite.LifeFull()
+	scale := float64(LifeGlassW) / float64(sprite.LifeFrameWidth())
+	scaledH := float64(full.Bounds().Dy()) * scale
+	baseY := float64(ScreenH - GroundHeight) + (float64(GroundHeight)-scaledH)/2
+	drawGlassRowAt(screen, filled, total, centered, baseY)
+}
+
+func drawGlassRowAt(screen *ebiten.Image, filled, total int, centered bool, baseY float64) {
+	if total <= 0 {
+		return
+	}
+	full := sprite.LifeFull()
 	empty := sprite.LifeEmpty()
 	scale := float64(LifeGlassW) / float64(sprite.LifeFrameWidth())
 
@@ -949,8 +1039,6 @@ func drawGlassRow(screen *ebiten.Image, filled, total int, centered bool) {
 	if centered {
 		baseX = (ScreenW - totalW) / 2
 	}
-	scaledH := int(float64(full.Bounds().Dy()) * scale)
-	baseY := ScreenH - GroundHeight + (GroundHeight-scaledH)/2
 
 	for i := 0; i < total; i++ {
 		img := full
@@ -960,7 +1048,7 @@ func drawGlassRow(screen *ebiten.Image, filled, total int, centered bool) {
 		x := baseX + i*(LifeGlassW+LifeGlassGap)
 		op := &ebiten.DrawImageOptions{}
 		op.GeoM.Scale(scale, scale)
-		op.GeoM.Translate(float64(x), float64(baseY))
+		op.GeoM.Translate(float64(x), baseY)
 		screen.DrawImage(img, op)
 	}
 }
@@ -991,9 +1079,82 @@ func drawBossHUD(screen *ebiten.Image, bf *BossFight, chargePower float64, charg
 		chargeBarY  = float64(FloorSurfaceY) - 80
 	)
 
-	drawLabel(screen, "Boss", ScreenW/2, labelY, ColorTextMuted)
-
 	barX := float64(ScreenW)/2 - bossHudBarW/2
+
+	if bf.IsBoxing() {
+		const (
+			boxingBossBarY    = 66.0
+			boxingTimeBarY    = 92.0
+			boxingStaminaBarY = 118.0
+			boxingLabelGap    = 8.0
+		)
+		labelRightX := barX - boxingLabelGap
+
+		drawOutlinedText(screen, "BOSS", labelFace, labelRightX, boxingBossBarY+bossHudBarH/2-6, text.AlignEnd, ColorTextMuted)
+		vector.DrawFilledRect(screen, float32(barX), float32(boxingBossBarY), float32(bossHudBarW), float32(bossHudBarH), ColorGlassEdge, true)
+		vector.StrokeRect(screen, float32(barX), float32(boxingBossBarY), float32(bossHudBarW), float32(bossHudBarH), 2, ColorKegEdge, true)
+		hpFrac := bf.BossHPFrac()
+		if hpFrac > 0 {
+			fillW := bossHudBarW * hpFrac
+			col := ColorBeer
+			if hpFrac <= 0.35 {
+				col = color.RGBA{180, 90, 40, 255}
+			}
+			vector.DrawFilledRect(screen, float32(barX), float32(boxingBossBarY), float32(fillW), float32(bossHudBarH), col, true)
+			vector.StrokeRect(screen, float32(barX), float32(boxingBossBarY), float32(bossHudBarW), float32(bossHudBarH), 2, ColorKegEdge, true)
+		}
+
+		drawOutlinedText(screen, "TIME", labelFace, labelRightX, boxingTimeBarY+bossHudBarH/2-6, text.AlignEnd, ColorTextMuted)
+		vector.DrawFilledRect(screen, float32(barX), float32(boxingTimeBarY), float32(bossHudBarW), float32(bossHudBarH), ColorGlassEdge, true)
+		vector.StrokeRect(screen, float32(barX), float32(boxingTimeBarY), float32(bossHudBarW), float32(bossHudBarH), 2, ColorKegEdge, true)
+		timeFrac := bf.TimerFrac()
+		if bf.InCountdown() {
+			timeFrac = 1
+		}
+		if timeFrac > 0 {
+			fillW := bossHudBarW * timeFrac
+			col := ColorFoam
+			if timeFrac <= 0.35 {
+				col = color.RGBA{180, 90, 40, 255}
+			}
+			vector.DrawFilledRect(screen, float32(barX), float32(boxingTimeBarY), float32(fillW), float32(bossHudBarH), col, true)
+			vector.StrokeRect(screen, float32(barX), float32(boxingTimeBarY), float32(bossHudBarW), float32(bossHudBarH), 2, ColorKegEdge, true)
+		}
+		secs := (bf.TimerRemaining() + 59) / 60
+		if bf.InCountdown() {
+			secs = (BoxingDurationFrames + 59) / 60
+		}
+		drawLabelLeft(screen, fmt.Sprintf("%ds", secs), barX+bossHudBarW+10, boxingTimeBarY+bossHudBarH/2-6, ColorText)
+
+		drawOutlinedText(screen, "STAMINA", labelFace, labelRightX, boxingStaminaBarY+bossHudBarH/2-6, text.AlignEnd, ColorTextMuted)
+		vector.DrawFilledRect(screen, float32(barX), float32(boxingStaminaBarY), float32(bossHudBarW), float32(bossHudBarH), ColorGlassEdge, true)
+		vector.StrokeRect(screen, float32(barX), float32(boxingStaminaBarY), float32(bossHudBarW), float32(bossHudBarH), 2, ColorKegEdge, true)
+		stamFrac := bf.StaminaFrac()
+		if bf.InCountdown() {
+			stamFrac = 1
+		}
+		if stamFrac > 0 {
+			fillW := bossHudBarW * stamFrac
+			col := color.RGBA{80, 180, 120, 255}
+			if stamFrac <= 0.35 || bf.BoxingExhausted() {
+				col = color.RGBA{180, 90, 40, 255}
+			}
+			vector.DrawFilledRect(screen, float32(barX), float32(boxingStaminaBarY), float32(fillW), float32(bossHudBarH), col, true)
+			vector.StrokeRect(screen, float32(barX), float32(boxingStaminaBarY), float32(bossHudBarW), float32(bossHudBarH), 2, ColorKegEdge, true)
+		}
+
+		if !bf.InCountdown() && !bf.BoxingVictoryReady() && !bf.boxingLosePending() {
+			tapFace := &text.GoTextFace{Source: labelFace.Source, Size: 26}
+			msg := "TAP!"
+			if bf.BoxingExhausted() {
+				msg = "TIRED!"
+			}
+			drawOutlinedText(screen, msg, tapFace, ScreenW/2, float64(ScreenH)/2, text.AlignCenter, ColorTextMuted)
+		}
+		return
+	}
+
+	drawLabel(screen, "Boss", ScreenW/2, labelY, ColorTextMuted)
 	vector.DrawFilledRect(screen, float32(barX), float32(lifeBarY), float32(bossHudBarW), float32(bossHudBarH), ColorGlassEdge, true)
 	vector.StrokeRect(screen, float32(barX), float32(lifeBarY), float32(bossHudBarW), float32(bossHudBarH), 2, ColorKegEdge, true)
 
@@ -1042,33 +1203,53 @@ func drawBossHUD(screen *ebiten.Image, bf *BossFight, chargePower float64, charg
 		vector.StrokeRect(screen, float32(barX), float32(lifeBarY), float32(bossHudBarW), float32(bossHudBarH), 2, ColorKegEdge, true)
 	}
 
-	if !charging {
-		drawLabel(screen, "Hold to throw", ScreenW/2, hintY, ColorTextMuted)
+	hudHintY := hintY
+	hudChargeY := chargeBarY
+	if bf.IsDuel() {
+		hudHintY = lifeBarY + 28
+		hudChargeY = hudHintY + 22
+	}
+
+	if bf.IsDuel() {
+		switch bf.DuelTurn() {
+		case duelTurnEnemy, duelTurnEnemyResolve:
+			drawLabel(screen, "Dodge!", ScreenW/2, hudHintY, ColorTextMuted)
+		default:
+			if !charging {
+				drawLabel(screen, "Your turn — hold to throw", ScreenW/2, hudHintY, ColorTextMuted)
+			}
+		}
+	} else if !charging {
+		drawLabel(screen, "Hold to throw", ScreenW/2, hudHintY, ColorTextMuted)
 	}
 	remaining := bf.throwsAllowed - bf.throwsUsed
 	if remaining < 0 {
 		remaining = 0
 	}
-	drawGlassRow(screen, remaining, bf.throwsAllowed, true)
+	if bf.IsDuel() {
+		drawGlassRowAt(screen, remaining, bf.throwsAllowed, true, hudChargeY+bossHudBarH+10)
+	} else {
+		drawGlassRow(screen, remaining, bf.throwsAllowed, true)
+	}
 
 	if chargePower < 0 {
 		chargePower = 0
 	} else if chargePower > 1 {
 		chargePower = 1
 	}
-	vector.DrawFilledRect(screen, float32(barX), float32(chargeBarY), float32(bossHudBarW), float32(bossHudBarH), ColorGlassEdge, true)
-	vector.StrokeRect(screen, float32(barX), float32(chargeBarY), float32(bossHudBarW), float32(bossHudBarH), 2, ColorKegEdge, true)
+	vector.DrawFilledRect(screen, float32(barX), float32(hudChargeY), float32(bossHudBarW), float32(bossHudBarH), ColorGlassEdge, true)
+	vector.StrokeRect(screen, float32(barX), float32(hudChargeY), float32(bossHudBarW), float32(bossHudBarH), 2, ColorKegEdge, true)
 	if chargePower > 0 {
 		fillW := bossHudBarW * chargePower
 		col := ColorBeer
 		if chargePower >= 1 {
 			col = ColorFoam
 		}
-		vector.DrawFilledRect(screen, float32(barX), float32(chargeBarY), float32(fillW), float32(bossHudBarH), col, true)
+		vector.DrawFilledRect(screen, float32(barX), float32(hudChargeY), float32(fillW), float32(bossHudBarH), col, true)
 		if chargePower >= 0.4 {
-			drawChargeFoamBubbles(screen, barX, chargeBarY, fillW, bossHudBarH, chargePower)
+			drawChargeFoamBubbles(screen, barX, hudChargeY, fillW, bossHudBarH, chargePower)
 		}
-		vector.StrokeRect(screen, float32(barX), float32(chargeBarY), float32(bossHudBarW), float32(bossHudBarH), 2, ColorKegEdge, true)
+		vector.StrokeRect(screen, float32(barX), float32(hudChargeY), float32(bossHudBarW), float32(bossHudBarH), 2, ColorKegEdge, true)
 	}
 }
 
@@ -1186,6 +1367,23 @@ func drawContinuePrompt(screen *ebiten.Image, text string) {
 }
 
 func drawBossIntroPrompt(screen *ebiten.Image, level int) {
+	if BossVariantForLevel(level) == BossVariantNeighbour {
+		drawLabel(screen, "The PappaPub neighbour wants", ScreenW/2, continueBtnY-72, ColorText)
+		drawLabel(screen, "a kickabout at the stadium —", ScreenW/2, continueBtnY-50, ColorText)
+		drawLabel(screen, "hit him with beer glasses!", ScreenW/2, continueBtnY-28, ColorText)
+		x, y, w, h := meetBossButtonBounds()
+		drawPubButton(screen, "KICK OFF!", x, y, w, h)
+		return
+	}
+	if BossIsBoxing(level) {
+		secs := (BoxingDurationFrames + 59) / 60
+		drawLabel(screen, "Dad wants a boxing match!", ScreenW/2, continueBtnY-72, ColorText)
+		drawLabel(screen, fmt.Sprintf("Knock him out before %d seconds —", secs), ScreenW/2, continueBtnY-50, ColorText)
+		drawLabel(screen, "tap fast!", ScreenW/2, continueBtnY-28, ColorText)
+		x, y, w, h := meetBossButtonBounds()
+		drawPubButton(screen, "BOX!", x, y, w, h)
+		return
+	}
 	if BossIsOutrun(level) {
 		secs := (OutrunDurationFramesForLevel(level) + 59) / 60
 		drawLabel(screen, "Your best pal's wife is chasing you!", ScreenW/2, continueBtnY-72, ColorText)

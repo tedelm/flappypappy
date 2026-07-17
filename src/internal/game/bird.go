@@ -69,8 +69,15 @@ func (b *Bird) Draw(screen *ebiten.Image) {
 	drawBeerGlass(screen, b.X, b.Y, b.Width, b.Height, b.tiltAngle())
 }
 
-func drawRunningPlayer(screen *ebiten.Image, cx, cy, width, height, angle float64) {
-	frame := sprite.RunningFrame(sprite.RunningFrameIndex(ebiten.Tick()))
+func drawRunningPlayer(screen *ebiten.Image, cx, cy, width, height, angle float64, frameIdx int) {
+	drawSpritePlayer(screen, sprite.RunningFrame(frameIdx), cx, cy, width, height, angle)
+}
+
+func drawStandingPlayer(screen *ebiten.Image, cx, cy, width, height, angle float64) {
+	drawSpritePlayer(screen, sprite.StandingReadyFrame(sprite.StandingReadyFrameIndex(ebiten.Tick())), cx, cy, width, height, angle)
+}
+
+func drawSpritePlayer(screen *ebiten.Image, frame *ebiten.Image, cx, cy, width, height, angle float64) {
 	fw := float64(frame.Bounds().Dx())
 	fh := float64(frame.Bounds().Dy())
 	if fw <= 0 || fh <= 0 {

@@ -4,6 +4,8 @@ import (
 	"math/rand"
 
 	"github.com/hajimehoshi/ebiten/v2"
+
+	"flappy/internal/game/sprite"
 )
 
 type Pipe struct {
@@ -132,14 +134,19 @@ func (pm *PipeManager) ResetBeforeLastDad() {
 	pm.spawnTimer = pm.spawnInterval
 }
 
-func (pm *PipeManager) Collides(bx, by, bw, bh float64) bool {
+func (pm *PipeManager) Collides(bx, by, bw, bh float64, dadVariant int) bool {
+	return pm.collidesAt(bx, by, bw, bh, dadVariant, sprite.FrameIndex(ebiten.Tick()))
+}
+
+func (pm *PipeManager) collidesAt(bx, by, bw, bh float64, dadVariant, frame int) bool {
 	for _, p := range pm.pipes {
-		if aabbOverlap(bx, by, bw, bh, p.X, 0, PipeWidth, p.GapY) {
+		lx, ly, lw, lh := lampHitbox(p.X, p.GapY)
+		if aabbOverlap(bx, by, bw, bh, lx, ly, lw, lh) {
 			return true
 		}
 		gapBottom := p.GapY + p.GapH
-		groundTop := float64(FloorSurfaceY)
-		if aabbOverlap(bx, by, bw, bh, p.X, gapBottom, PipeWidth, groundTop-gapBottom) {
+		dx, dy, dw, dh := dadHitbox(p.X, gapBottom, dadVariant, frame)
+		if aabbOverlap(bx, by, bw, bh, dx, dy, dw, dh) {
 			return true
 		}
 	}
@@ -154,11 +161,11 @@ func (pm *PipeManager) DrawLamps(screen *ebiten.Image) {
 	}
 }
 
-func (pm *PipeManager) DrawDads(screen *ebiten.Image) {
+func (pm *PipeManager) DrawDads(screen *ebiten.Image, variant int) {
 	for _, p := range pm.pipes {
 		x := float32(p.X)
 		gapBottom := float32(p.GapY + p.GapH)
-		drawFatDad(screen, x, gapBottom)
+		drawFatDad(screen, x, gapBottom, variant)
 	}
 }
 

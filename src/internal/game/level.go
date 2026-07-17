@@ -1,6 +1,7 @@
 package game
 
 import (
+	"math"
 	"math/rand"
 
 	"flappy/internal/game/sprite"
@@ -10,8 +11,8 @@ const (
 	LevelStartDads     = 7 // 7
 	LevelDadsIncrement = 6 // 6
 
-	BossHitsRequired  = 4
-	BossThrowsAllowed = 10
+	BossHitsRequired  = 4  // 4
+	BossThrowsAllowed = 10 // 10
 
 	// Outrun chase: every 3rd level; base duration 20s at 60 TPS.
 	OutrunDurationFrames = 1200
@@ -44,6 +45,33 @@ const (
 	outrunLaughMinFrames = 180
 	outrunLaughMaxFrames = 360
 
+	// Boss sprint bursts during outrun chase.
+	outrunSprintCooldownMin = 180
+	outrunSprintCooldownMax = 360
+	outrunSprintDurationMin = 45
+	outrunSprintDurationMax = 90
+	outrunSprintCloseMult   = 1.75
+
+	// Boxing match (level 5): deplete boss HP before the timer runs out.
+	BoxingDurationFrames       = 1200 // 20s at 60 TPS — player deadline bar
+	boxingBossMaxHP            = 100.0
+	boxingTapDamage            = 2.8
+	boxingUppercutDamage       = 6.0
+	boxingHitTimePenaltyFrames = 5.1 * 60 // −5s per dad hit
+	boxingDadSuppressFrames    = 2        // dad can't punch while player mashes
+	boxingBurstCooldownMin     = 150
+	boxingBurstCooldownMax     = 300
+	boxingBurstDurationMin     = 40
+	boxingBurstDurationMax     = 75
+	boxingPlayerDisplayH       = 170.0
+	boxingDadDisplayH          = 220.0
+	boxingPlayerScreenX        = 140.0
+	boxingGroundClearance      = 10.0
+	boxingStaminaMax           = 100.0
+	boxingTapStaminaCost       = 9.0
+	boxingStaminaRegenPerFrame = 0.45
+	boxingStaminaRecoverTo     = 40.0
+
 	bossBaseMoveSpeed   = 2.2
 	bossMoveSpeedPerLvl = 0.25
 	bossMaxMoveSpeed    = 4.5
@@ -68,6 +96,39 @@ func DadsRequiredForLevel(level int) int {
 		level = 1
 	}
 	return LevelStartDads + (level-1)*LevelDadsIncrement
+}
+
+const (
+	BossVariantLady = iota
+	BossVariantNeighbour
+	BossVariantDad
+)
+
+// BossVariantForLevel selects boss presentation and fight rules.
+func BossVariantForLevel(level int) int {
+	switch level {
+	case 4:
+		return BossVariantNeighbour
+	case 5:
+		return BossVariantDad
+	default:
+		return BossVariantLady
+	}
+}
+
+// BossIsBoxing is true for the level-5 dad boxing endurance fight.
+func BossIsBoxing(level int) bool {
+	return level == 5
+}
+
+func boxingBurstCooldownFrames() int {
+	span := boxingBurstCooldownMax - boxingBurstCooldownMin + 1
+	return boxingBurstCooldownMin + rand.Intn(span)
+}
+
+func boxingBurstDurationFrames() int {
+	span := boxingBurstDurationMax - boxingBurstDurationMin + 1
+	return boxingBurstDurationMin + rand.Intn(span)
 }
 
 // BossIsOutrun is true for every 3rd level's scrolling-race boss fight (3, 6, 9, …).
@@ -131,6 +192,15 @@ func OutrunTapLeadBoostForLevel(level int) float64 {
 	return boost
 }
 
+// OutrunDifficultyMult scales how fast the boss closes the gap each chase.
+// Chase 1 (level 3): 2.0×. Each subsequent chase multiplies by 1.15.
+func OutrunDifficultyMult(chaseIndex int) float64 {
+	if chaseIndex < 1 {
+		chaseIndex = 1
+	}
+	return 1.7 * math.Pow(1.10, float64(chaseIndex-1))
+}
+
 func OutrunCountdownTotalFrames() int {
 	return OutrunCountdownSecs*outrunSecFrames + outrunGoHoldFrames
 }
@@ -138,6 +208,16 @@ func OutrunCountdownTotalFrames() int {
 func outrunLaughIntervalFrames() int {
 	span := outrunLaughMaxFrames - outrunLaughMinFrames + 1
 	return outrunLaughMinFrames + rand.Intn(span)
+}
+
+func outrunSprintCooldownFrames() int {
+	span := outrunSprintCooldownMax - outrunSprintCooldownMin + 1
+	return outrunSprintCooldownMin + rand.Intn(span)
+}
+
+func outrunSprintDurationFrames() int {
+	span := outrunSprintDurationMax - outrunSprintDurationMin + 1
+	return outrunSprintDurationMin + rand.Intn(span)
 }
 
 func BossHitsForLevel(level int) int {
@@ -215,6 +295,33 @@ func WallpaperIndex(level int) int {
 		level = 1
 	}
 	return (level - 1) % NumWallpapers
+}
+
+// DadVariantForLevel picks the obstacle dad sprite sheet for a level.
+// Levels 1–4 map to dad / dad_2 / dad_3 / dad_4; from level 5 onward the pick
+// is hashed from seed so it stays fixed for that level within a run, and never
+// repeats the previous level's variant.
+func DadVariantForLevel(level, seed int) int {
+	if level < 1 {
+		level = 1
+	}
+	switch level {
+	case 1:
+		return 0
+	case 2:
+		return 1
+	case 3:
+		return 2
+	case 4:
+		return 3
+	default:
+		prev := DadVariantForLevel(level-1, seed)
+		pick := int(decorHash(seed, level) % uint32(sprite.DadVariantCount-1))
+		if pick >= prev {
+			pick++
+		}
+		return pick
+	}
 }
 
 func LevelPaintingWindow(level int) (start, count int) {

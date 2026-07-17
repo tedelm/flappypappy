@@ -183,8 +183,8 @@ func TestOutrunSurviveWithTaps(t *testing.T) {
 	won := false
 	dur := OutrunDurationFramesForLevel(3)
 	for i := 0; i < dur+deathTipFrames+deathExplodeHold+deathSettleFrames+10; i++ {
-		// ~4 taps/sec keeps the gap.
-		if i%15 == 0 {
+		// ~8 taps/sec keeps the gap at 2× difficulty.
+		if i%7 == 0 {
 			bf.Tap()
 		}
 		w, l := bf.Update()
@@ -216,6 +216,12 @@ func TestOutrunHarderEachChase(t *testing.T) {
 	}
 	if OutrunTapLeadBoostForLevel(6) >= OutrunTapLeadBoostForLevel(3) {
 		t.Error("level 6 tap boost should be weaker than level 3")
+	}
+	if OutrunDifficultyMult(6) <= OutrunDifficultyMult(3) {
+		t.Error("level 6 difficulty mult should exceed level 3")
+	}
+	if OutrunDifficultyMult(3) < 1.99 {
+		t.Errorf("first chase difficulty mult = %v, want ~2.0", OutrunDifficultyMult(3))
 	}
 }
 
@@ -253,5 +259,64 @@ func TestOutrunLaughSFX(t *testing.T) {
 	}
 	if bf.ConsumeLaughSFX() {
 		t.Error("ConsumeLaughSFX should clear the flag")
+	}
+}
+
+func TestOutrunSprintClosesGapFaster(t *testing.T) {
+	bf := NewBossFight()
+	bf.Reset(3)
+	skipOutrunCountdown(bf)
+
+	bf.sprintFrames = 0
+	bf.sprintCooldown = 9999
+	leadBefore := bf.lead
+	bf.Update()
+	leadNormal := bf.lead
+
+	bf.lead = leadBefore
+	bf.sprintFrames = 1
+	bf.sprintCooldown = 0
+	bf.Update()
+	leadSprint := bf.lead
+
+	if leadSprint >= leadNormal {
+		t.Errorf("sprint should close gap faster: normal=%v sprint=%v", leadNormal, leadSprint)
+	}
+}
+
+func TestOutrunSprintScheduling(t *testing.T) {
+	bf := NewBossFight()
+	bf.Reset(3)
+	skipOutrunCountdown(bf)
+
+	bf.sprintFrames = 0
+	bf.sprintCooldown = 1
+	bf.Update()
+	if bf.sprintFrames <= 0 {
+		t.Fatal("sprint should start when cooldown reaches 0")
+	}
+	if !bf.IsSprinting() {
+		t.Fatal("IsSprinting should be true during sprint")
+	}
+	if !bf.boss.sprinting {
+		t.Fatal("boss.sprinting should be true during sprint")
+	}
+	if !bf.ConsumeLaughSFX() {
+		t.Fatal("laugh SFX should fire when sprint starts")
+	}
+
+	startFrames := bf.sprintFrames
+	if startFrames < outrunSprintDurationMin || startFrames > outrunSprintDurationMax {
+		t.Errorf("sprint duration %d outside [%d,%d]", startFrames, outrunSprintDurationMin, outrunSprintDurationMax)
+	}
+
+	bf.lead = outrunMaxLead
+	bf.sprintFrames = 1
+	bf.Update()
+	if bf.IsSprinting() {
+		t.Fatal("IsSprinting should be false after last sprint frame")
+	}
+	if bf.sprintCooldown < outrunSprintCooldownMin || bf.sprintCooldown > outrunSprintCooldownMax {
+		t.Errorf("sprintCooldown %d outside [%d,%d]", bf.sprintCooldown, outrunSprintCooldownMin, outrunSprintCooldownMax)
 	}
 }
