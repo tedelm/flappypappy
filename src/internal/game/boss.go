@@ -107,6 +107,7 @@ type BossFight struct {
 	deathTimer    int
 	explodeSFX    bool
 	hitSFX        bool
+	loseSFX       bool
 	boss          Boss
 
 	// Neighbour duel (level 4 alternating turns).
@@ -177,6 +178,7 @@ func (bf *BossFight) Reset(level int) {
 	bf.deathTimer = 0
 	bf.explodeSFX = false
 	bf.hitSFX = false
+	bf.loseSFX = false
 	bf.variant = BossVariantLady
 	bf.duelTurn = duelTurnPlayer
 	bf.enemyProjectile = nil
@@ -755,6 +757,14 @@ func (bf *BossFight) ConsumeHitSFX() bool {
 		return false
 	}
 	bf.hitSFX = false
+	return true
+}
+
+func (bf *BossFight) ConsumeLoseSFX() bool {
+	if !bf.loseSFX {
+		return false
+	}
+	bf.loseSFX = false
 	return true
 }
 

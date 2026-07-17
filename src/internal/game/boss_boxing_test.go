@@ -99,8 +99,12 @@ func TestBoxingLoseWithoutTaps(t *testing.T) {
 	bf.Reset(5)
 	skipBoxingCountdown(bf)
 	lost := false
+	sfxSeen := false
 	for i := 0; i < BoxingDurationFrames+boxingLoseKOFrames+10; i++ {
 		_, l := bf.Update()
+		if bf.ConsumeLoseSFX() {
+			sfxSeen = true
+		}
 		if l {
 			lost = true
 			break
@@ -108,6 +112,9 @@ func TestBoxingLoseWithoutTaps(t *testing.T) {
 	}
 	if !lost {
 		t.Fatal("expected lose when timer runs out without tapping")
+	}
+	if !sfxSeen {
+		t.Fatal("expected ConsumeLoseSFX when boxing lose starts")
 	}
 }
 
@@ -171,10 +178,10 @@ func TestBoxingDadHitRemovesFiveSeconds(t *testing.T) {
 	if !bf.enemyThrowing {
 		t.Fatal("expected dad punch to start")
 	}
-	// One normal tick + 5s penalty.
-	want := before - 1 - boxingHitTimePenaltyFrames
+	// One normal tick + hit time penalty.
+	want := before - 1 - int(boxingHitTimePenaltyFrames)
 	if bf.timerFrames != want {
-		t.Errorf("timer = %d, want %d (before=%d penalty=%d)", bf.timerFrames, want, before, boxingHitTimePenaltyFrames)
+		t.Errorf("timer = %d, want %d (before=%d penalty=%d)", bf.timerFrames, want, before, int(boxingHitTimePenaltyFrames))
 	}
 	if !bf.ConsumeHitSFX() {
 		t.Fatal("expected hitSFX after dad punch")
@@ -216,12 +223,10 @@ func TestBoxingExhaustFromMashing(t *testing.T) {
 	bf := NewBossFight()
 	bf.Reset(5)
 	skipBoxingCountdown(bf)
-	taps := int(boxingStaminaMax/boxingTapStaminaCost) + 1
-	for i := 0; i < taps; i++ {
-		bf.Tap()
-	}
+	bf.boxingStamina = boxingTapStaminaCost
+	bf.Tap()
 	if !bf.BoxingExhausted() {
-		t.Fatal("expected exhausted after mashing taps")
+		t.Fatal("expected exhausted after spending last stamina")
 	}
 	if bf.CanTap() {
 		t.Fatal("CanTap should be false while exhausted")

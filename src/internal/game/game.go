@@ -742,6 +742,9 @@ func (g *Game) Update() error {
 		if g.bossFight.ConsumeExplodeSFX() && g.music != nil {
 			g.music.PlayPlayerWin()
 		}
+		if g.bossFight.ConsumeLoseSFX() && g.music != nil {
+			g.music.PlayPlayerPunchLose()
+		}
 		if g.bossFight.ConsumeLaughSFX() && g.music != nil {
 			g.music.PlayLaughingRun()
 		}

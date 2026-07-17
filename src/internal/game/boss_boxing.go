@@ -294,6 +294,7 @@ func (bf *BossFight) startBoxingLose() {
 	bf.playerThrowing = false
 	bf.playerInvincible = 0
 	bf.sprintFrames = 0
+	bf.loseSFX = true
 }
 
 func (bf *BossFight) updateBoxingWin() (won, lost bool) {
@@ -431,7 +432,7 @@ func drawBoxingPlayer(screen *ebiten.Image, bf *BossFight) {
 			frame = sprite.PlayerPunchFrame(sprite.PlayerPunchJabStart + idx)
 		}
 	default:
-		frame = sprite.PlayerPunchFrame(sprite.PlayerPunchIdleFrameIndex(bf.runAnimTick))
+		frame = sprite.StandingReadyFrame(sprite.StandingReadyFrameIndex(int64(bf.runAnimTick)))
 	}
 
 	drawSpritePlayer(screen, frame, cx, cy, 0, boxingPlayerDisplayH, 0)
