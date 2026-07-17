@@ -117,7 +117,7 @@ func TestBoxingWinHoldsForContinue(t *testing.T) {
 	skipBoxingCountdown(bf)
 	ready := false
 	for i := 0; i < BoxingDurationFrames+boxingWinKOFrames+10; i++ {
-		if i%3 == 0 {
+		if bf.CanTap() {
 			bf.Tap()
 		}
 		w, l := bf.Update()
@@ -176,6 +176,12 @@ func TestBoxingDadHitRemovesFiveSeconds(t *testing.T) {
 	if bf.timerFrames != want {
 		t.Errorf("timer = %d, want %d (before=%d penalty=%d)", bf.timerFrames, want, before, boxingHitTimePenaltyFrames)
 	}
+	if !bf.ConsumeHitSFX() {
+		t.Fatal("expected hitSFX after dad punch")
+	}
+	if bf.ConsumeHitSFX() {
+		t.Fatal("ConsumeHitSFX should clear the flag")
+	}
 }
 
 func TestBoxingMashSuppressesDadPunch(t *testing.T) {
@@ -203,5 +209,50 @@ func TestBoxingMashSuppressesDadPunch(t *testing.T) {
 	bf.Update()
 	if !bf.enemyThrowing {
 		t.Fatal("expected dad punch after player stopped mashing")
+	}
+}
+
+func TestBoxingExhaustFromMashing(t *testing.T) {
+	bf := NewBossFight()
+	bf.Reset(5)
+	skipBoxingCountdown(bf)
+	taps := int(boxingStaminaMax/boxingTapStaminaCost) + 1
+	for i := 0; i < taps; i++ {
+		bf.Tap()
+	}
+	if !bf.BoxingExhausted() {
+		t.Fatal("expected exhausted after mashing taps")
+	}
+	if bf.CanTap() {
+		t.Fatal("CanTap should be false while exhausted")
+	}
+	hpBefore := bf.lead
+	bf.Tap()
+	if bf.lead != hpBefore {
+		t.Errorf("tap while exhausted should not damage boss: %v -> %v", hpBefore, bf.lead)
+	}
+}
+
+func TestBoxingRecoverFromExhaust(t *testing.T) {
+	bf := NewBossFight()
+	bf.Reset(5)
+	skipBoxingCountdown(bf)
+	bf.boxingStamina = 0
+	bf.boxingExhausted = true
+	bf.boxingFramesSinceTap = boxingDadSuppressFrames
+	for i := 0; i < 200; i++ {
+		bf.Update()
+		if !bf.BoxingExhausted() {
+			break
+		}
+	}
+	if bf.BoxingExhausted() {
+		t.Fatalf("expected recovery, stamina=%v", bf.boxingStamina)
+	}
+	if bf.boxingStamina < boxingStaminaRecoverTo {
+		t.Errorf("stamina = %v, want >= %v", bf.boxingStamina, boxingStaminaRecoverTo)
+	}
+	if !bf.CanTap() {
+		t.Fatal("CanTap should be true after recovery")
 	}
 }

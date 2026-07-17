@@ -732,8 +732,12 @@ func (g *Game) Update() error {
 		}
 		won, lost := g.bossFight.Update()
 		if g.bossFight.ConsumeHitSFX() && g.music != nil {
-			g.music.PlayGlassBreak()
-			g.music.PlayWrongWithYou()
+			if g.bossFight.IsBoxing() {
+				g.music.PlayNeighbourPunch()
+			} else {
+				g.music.PlayGlassBreak()
+				g.music.PlayWrongWithYou()
+			}
 		}
 		if g.bossFight.ConsumeExplodeSFX() && g.music != nil {
 			g.music.PlayPlayerWin()
@@ -1076,14 +1080,16 @@ func drawBossHUD(screen *ebiten.Image, bf *BossFight, chargePower float64, charg
 
 	if bf.IsBoxing() {
 		const (
-			boxingBossLabelY = 48.0
-			boxingHPBarY     = 66.0
-			boxingTimeLabelY = 92.0
-			boxingTimeBarY   = 108.0
+			boxingBossBarY    = 66.0
+			boxingTimeBarY    = 92.0
+			boxingStaminaBarY = 118.0
+			boxingLabelGap    = 8.0
 		)
-		drawLabel(screen, "BOSS", ScreenW/2, boxingBossLabelY, ColorTextMuted)
-		vector.DrawFilledRect(screen, float32(barX), float32(boxingHPBarY), float32(bossHudBarW), float32(bossHudBarH), ColorGlassEdge, true)
-		vector.StrokeRect(screen, float32(barX), float32(boxingHPBarY), float32(bossHudBarW), float32(bossHudBarH), 2, ColorKegEdge, true)
+		labelRightX := barX - boxingLabelGap
+
+		drawOutlinedText(screen, "BOSS", labelFace, labelRightX, boxingBossBarY+bossHudBarH/2-6, text.AlignEnd, ColorTextMuted)
+		vector.DrawFilledRect(screen, float32(barX), float32(boxingBossBarY), float32(bossHudBarW), float32(bossHudBarH), ColorGlassEdge, true)
+		vector.StrokeRect(screen, float32(barX), float32(boxingBossBarY), float32(bossHudBarW), float32(bossHudBarH), 2, ColorKegEdge, true)
 		hpFrac := bf.BossHPFrac()
 		if hpFrac > 0 {
 			fillW := bossHudBarW * hpFrac
@@ -1091,11 +1097,11 @@ func drawBossHUD(screen *ebiten.Image, bf *BossFight, chargePower float64, charg
 			if hpFrac <= 0.35 {
 				col = color.RGBA{180, 90, 40, 255}
 			}
-			vector.DrawFilledRect(screen, float32(barX), float32(boxingHPBarY), float32(fillW), float32(bossHudBarH), col, true)
-			vector.StrokeRect(screen, float32(barX), float32(boxingHPBarY), float32(bossHudBarW), float32(bossHudBarH), 2, ColorKegEdge, true)
+			vector.DrawFilledRect(screen, float32(barX), float32(boxingBossBarY), float32(fillW), float32(bossHudBarH), col, true)
+			vector.StrokeRect(screen, float32(barX), float32(boxingBossBarY), float32(bossHudBarW), float32(bossHudBarH), 2, ColorKegEdge, true)
 		}
 
-		drawLabel(screen, "TIME", ScreenW/2, boxingTimeLabelY, ColorTextMuted)
+		drawOutlinedText(screen, "TIME", labelFace, labelRightX, boxingTimeBarY+bossHudBarH/2-6, text.AlignEnd, ColorTextMuted)
 		vector.DrawFilledRect(screen, float32(barX), float32(boxingTimeBarY), float32(bossHudBarW), float32(bossHudBarH), ColorGlassEdge, true)
 		vector.StrokeRect(screen, float32(barX), float32(boxingTimeBarY), float32(bossHudBarW), float32(bossHudBarH), 2, ColorKegEdge, true)
 		timeFrac := bf.TimerFrac()
@@ -1115,10 +1121,32 @@ func drawBossHUD(screen *ebiten.Image, bf *BossFight, chargePower float64, charg
 		if bf.InCountdown() {
 			secs = (BoxingDurationFrames + 59) / 60
 		}
-		drawLabel(screen, fmt.Sprintf("%ds", secs), ScreenW/2, boxingTimeBarY+bossHudBarH+18, ColorText)
+		drawLabelLeft(screen, fmt.Sprintf("%ds", secs), barX+bossHudBarW+10, boxingTimeBarY+bossHudBarH/2-6, ColorText)
+
+		drawOutlinedText(screen, "STAMINA", labelFace, labelRightX, boxingStaminaBarY+bossHudBarH/2-6, text.AlignEnd, ColorTextMuted)
+		vector.DrawFilledRect(screen, float32(barX), float32(boxingStaminaBarY), float32(bossHudBarW), float32(bossHudBarH), ColorGlassEdge, true)
+		vector.StrokeRect(screen, float32(barX), float32(boxingStaminaBarY), float32(bossHudBarW), float32(bossHudBarH), 2, ColorKegEdge, true)
+		stamFrac := bf.StaminaFrac()
+		if bf.InCountdown() {
+			stamFrac = 1
+		}
+		if stamFrac > 0 {
+			fillW := bossHudBarW * stamFrac
+			col := color.RGBA{80, 180, 120, 255}
+			if stamFrac <= 0.35 || bf.BoxingExhausted() {
+				col = color.RGBA{180, 90, 40, 255}
+			}
+			vector.DrawFilledRect(screen, float32(barX), float32(boxingStaminaBarY), float32(fillW), float32(bossHudBarH), col, true)
+			vector.StrokeRect(screen, float32(barX), float32(boxingStaminaBarY), float32(bossHudBarW), float32(bossHudBarH), 2, ColorKegEdge, true)
+		}
+
 		if !bf.InCountdown() && !bf.BoxingVictoryReady() && !bf.boxingLosePending() {
 			tapFace := &text.GoTextFace{Source: labelFace.Source, Size: 26}
-			drawOutlinedText(screen, "TAP!", tapFace, ScreenW/2, float64(ScreenH)/2, text.AlignCenter, ColorTextMuted)
+			msg := "TAP!"
+			if bf.BoxingExhausted() {
+				msg = "TIRED!"
+			}
+			drawOutlinedText(screen, msg, tapFace, ScreenW/2, float64(ScreenH)/2, text.AlignCenter, ColorTextMuted)
 		}
 		return
 	}

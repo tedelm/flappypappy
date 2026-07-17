@@ -144,8 +144,10 @@ type BossFight struct {
 	runAnimTick     int
 
 	// Boxing victory hold (paused win pose until CONTINUE).
-	boxingVictoryHold     bool
-	boxingFramesSinceTap  int
+	boxingVictoryHold    bool
+	boxingFramesSinceTap int
+	boxingStamina        float64
+	boxingExhausted      bool
 }
 
 func NewBossFight() *BossFight {
@@ -199,6 +201,8 @@ func (bf *BossFight) Reset(level int) {
 	bf.runAnimTick = 0
 	bf.boxingVictoryHold = false
 	bf.boxingFramesSinceTap = boxingDadSuppressFrames
+	bf.boxingStamina = boxingStaminaMax
+	bf.boxingExhausted = false
 
 	if BossIsOutrun(level) {
 		bf.mode = bossModeOutrun
@@ -618,6 +622,9 @@ func (bf *BossFight) CanThrow() bool {
 func (bf *BossFight) CanTap() bool {
 	tapMode := bf.mode == bossModeOutrun || bf.mode == bossModeBoxing
 	if bf.boxingLosePending() || bf.BoxingVictoryReady() {
+		return false
+	}
+	if bf.IsBoxing() && bf.boxingExhausted {
 		return false
 	}
 	return tapMode && !bf.pendingWin && !bf.InCountdown() && bf.timerFrames > 0

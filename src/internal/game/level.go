@@ -53,20 +53,24 @@ const (
 	outrunSprintCloseMult   = 1.75
 
 	// Boxing match (level 5): deplete boss HP before the timer runs out.
-	BoxingDurationFrames         = 1200 // 20s at 60 TPS — player deadline bar
-	boxingBossMaxHP              = 100.0
-	boxingTapDamage              = 4.0
-	boxingUppercutDamage         = 6.0
-	boxingHitTimePenaltyFrames   = 5 * 60 // −5s per dad hit
-	boxingDadSuppressFrames      = 20     // dad can't punch while player mashes
-	boxingBurstCooldownMin       = 150
-	boxingBurstCooldownMax       = 300
-	boxingBurstDurationMin       = 40
-	boxingBurstDurationMax       = 75
-	boxingPlayerDisplayH         = 125.0
-	boxingDadDisplayH            = 200.0
-	boxingPlayerScreenX          = 140.0
-	boxingGroundClearance        = 10.0
+	BoxingDurationFrames       = 1200 // 20s at 60 TPS — player deadline bar
+	boxingBossMaxHP            = 100.0
+	boxingTapDamage            = 0.5
+	boxingUppercutDamage       = 6.0
+	boxingHitTimePenaltyFrames = 7 * 60 // −5s per dad hit
+	boxingDadSuppressFrames    = 2      // dad can't punch while player mashes
+	boxingBurstCooldownMin     = 150
+	boxingBurstCooldownMax     = 300
+	boxingBurstDurationMin     = 40
+	boxingBurstDurationMax     = 75
+	boxingPlayerDisplayH       = 170.0
+	boxingDadDisplayH          = 250.0
+	boxingPlayerScreenX        = 140.0
+	boxingGroundClearance      = 10.0
+	boxingStaminaMax           = 100.0
+	boxingTapStaminaCost       = 10.0
+	boxingStaminaRegenPerFrame = 0.45
+	boxingStaminaRecoverTo     = 40.0
 
 	bossBaseMoveSpeed   = 2.2
 	bossMoveSpeedPerLvl = 0.25

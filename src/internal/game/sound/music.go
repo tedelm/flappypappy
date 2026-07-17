@@ -11,7 +11,7 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/audio/mp3"
 )
 
-//go:embed game_music.mp3 game_music_menu.mp3 game_music_boss_1.mp3 beer_glass_hit.mp3 beer_glass_break.mp3 jump.mp3 laugh.mp3 hey1.mp3 hey2.mp3 power_up.mp3 player_win.mp3 ouch_1.mp3 ouch_2.mp3 wrongwithyou.mp3 footstep.mp3 laughing_run.mp3
+//go:embed game_music.mp3 game_music_menu.mp3 game_music_boss_1.mp3 beer_glass_hit.mp3 beer_glass_break.mp3 jump.mp3 laugh.mp3 hey1.mp3 hey2.mp3 power_up.mp3 player_win.mp3 ouch_1.mp3 ouch_2.mp3 wrongwithyou.mp3 footstep.mp3 laughing_run.mp3 neighbour_punch.mp3
 var assets embed.FS
 
 const (
@@ -45,10 +45,11 @@ type Manager struct {
 	ouch1Player        *audio.Player
 	ouch2Player        *audio.Player
 	wrongWithYouPlayer *audio.Player
-	footstepPlayer     *audio.Player
-	laughingRunPlayer  *audio.Player
-	mode               MusicMode
-	modeSet            bool
+	footstepPlayer       *audio.Player
+	laughingRunPlayer    *audio.Player
+	neighbourPunchPlayer *audio.Player
+	mode                 MusicMode
+	modeSet              bool
 }
 
 func NewManager() (*Manager, error) {
@@ -270,24 +271,47 @@ func NewManager() (*Manager, error) {
 	}
 	laughingRunPlayer.SetVolume(sfxVolume)
 
+	neighbourPunchPlayer, err := newOneShotPlayer(ctx, "neighbour_punch.mp3")
+	if err != nil {
+		menuPlayer.Close()
+		gamePlayer.Close()
+		bossPlayer.Close()
+		lifeLostPlayer.Close()
+		glassBreakPlayer.Close()
+		jumpPlayer.Close()
+		gameOverPlayer.Close()
+		hey1Player.Close()
+		hey2Player.Close()
+		powerUpPlayer.Close()
+		playerWinPlayer.Close()
+		ouch1Player.Close()
+		ouch2Player.Close()
+		wrongWithYouPlayer.Close()
+		footstepPlayer.Close()
+		laughingRunPlayer.Close()
+		return nil, fmt.Errorf("neighbour punch sfx: %w", err)
+	}
+	neighbourPunchPlayer.SetVolume(sfxVolume)
+
 	return &Manager{
-		ctx:                ctx,
-		menuPlayer:         menuPlayer,
-		gamePlayer:         gamePlayer,
-		bossPlayer:         bossPlayer,
-		lifeLostPlayer:     lifeLostPlayer,
-		glassBreakPlayer:   glassBreakPlayer,
-		jumpPlayer:         jumpPlayer,
-		gameOverPlayer:     gameOverPlayer,
-		hey1Player:         hey1Player,
-		hey2Player:         hey2Player,
-		powerUpPlayer:      powerUpPlayer,
-		playerWinPlayer:    playerWinPlayer,
-		ouch1Player:        ouch1Player,
-		ouch2Player:        ouch2Player,
-		wrongWithYouPlayer: wrongWithYouPlayer,
-		footstepPlayer:     footstepPlayer,
-		laughingRunPlayer:  laughingRunPlayer,
+		ctx:                  ctx,
+		menuPlayer:           menuPlayer,
+		gamePlayer:           gamePlayer,
+		bossPlayer:           bossPlayer,
+		lifeLostPlayer:       lifeLostPlayer,
+		glassBreakPlayer:     glassBreakPlayer,
+		jumpPlayer:           jumpPlayer,
+		gameOverPlayer:       gameOverPlayer,
+		hey1Player:           hey1Player,
+		hey2Player:           hey2Player,
+		powerUpPlayer:        powerUpPlayer,
+		playerWinPlayer:      playerWinPlayer,
+		ouch1Player:          ouch1Player,
+		ouch2Player:          ouch2Player,
+		wrongWithYouPlayer:   wrongWithYouPlayer,
+		footstepPlayer:       footstepPlayer,
+		laughingRunPlayer:    laughingRunPlayer,
+		neighbourPunchPlayer: neighbourPunchPlayer,
 	}, nil
 }
 
@@ -426,6 +450,14 @@ func (m *Manager) PlayLaughingRun() {
 	m.laughingRunPlayer.Play()
 }
 
+func (m *Manager) PlayNeighbourPunch() {
+	if m == nil || m.neighbourPunchPlayer == nil {
+		return
+	}
+	_ = m.neighbourPunchPlayer.Rewind()
+	m.neighbourPunchPlayer.Play()
+}
+
 func (m *Manager) SetMode(mode MusicMode) {
 	if m == nil || (m.modeSet && m.mode == mode) {
 		return
@@ -532,6 +564,11 @@ func (m *Manager) Close() error {
 	}
 	if m.laughingRunPlayer != nil {
 		if e := m.laughingRunPlayer.Close(); e != nil && err == nil {
+			err = e
+		}
+	}
+	if m.neighbourPunchPlayer != nil {
+		if e := m.neighbourPunchPlayer.Close(); e != nil && err == nil {
 			err = e
 		}
 	}

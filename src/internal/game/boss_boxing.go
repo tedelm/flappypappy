@@ -72,6 +72,8 @@ func (bf *BossFight) resetBoxingBoss(level int) {
 	bf.pendingWin = false
 	bf.boxingVictoryHold = false
 	bf.boxingFramesSinceTap = boxingDadSuppressFrames
+	bf.boxingStamina = boxingStaminaMax
+	bf.boxingExhausted = false
 	bf.footballHits = boxingDadStraight // reuse as dad punch kind
 
 	bf.boss = Boss{
@@ -102,6 +104,16 @@ func (bf *BossFight) updateBoxing() (won, lost bool) {
 		bf.playerInvincible--
 	}
 	bf.boxingFramesSinceTap++
+
+	if bf.boxingFramesSinceTap >= boxingDadSuppressFrames {
+		bf.boxingStamina += boxingStaminaRegenPerFrame
+		if bf.boxingStamina > boxingStaminaMax {
+			bf.boxingStamina = boxingStaminaMax
+		}
+	}
+	if bf.boxingExhausted && bf.boxingStamina >= boxingStaminaRecoverTo {
+		bf.boxingExhausted = false
+	}
 
 	bf.updateBoxingAnims()
 	bf.updateBoxingBurst()
@@ -149,6 +161,7 @@ func (bf *BossFight) updateBoxingBurst() {
 			bf.enemyThrowFrame = 0
 			bf.enemyThrowTick = 0
 			bf.playerInvincible = boxingPlayerHitFrames
+			bf.hitSFX = true
 			bf.timerFrames -= boxingHitTimePenaltyFrames
 			if bf.timerFrames < 0 {
 				bf.timerFrames = 0
@@ -214,7 +227,33 @@ func (bf *BossFight) updateBoxingAnims() {
 	bf.runAnimTick++
 }
 
+func (bf *BossFight) BoxingExhausted() bool {
+	return bf.IsBoxing() && bf.boxingExhausted
+}
+
+func (bf *BossFight) StaminaFrac() float64 {
+	if boxingStaminaMax <= 0 {
+		return 0
+	}
+	f := bf.boxingStamina / boxingStaminaMax
+	if f < 0 {
+		return 0
+	}
+	if f > 1 {
+		return 1
+	}
+	return f
+}
+
 func (bf *BossFight) boxingTap() {
+	if bf.boxingExhausted || bf.boxingStamina < boxingTapStaminaCost {
+		return
+	}
+	bf.boxingStamina -= boxingTapStaminaCost
+	if bf.boxingStamina <= 0 {
+		bf.boxingStamina = 0
+		bf.boxingExhausted = true
+	}
 	bf.throwsUsed++
 	dmg := boxingTapDamage
 	if (bf.throwsUsed-1)%3 == boxingPunchUppercut {
@@ -373,6 +412,8 @@ func drawBoxingPlayer(screen *ebiten.Image, bf *BossFight) {
 			idx = 0
 		}
 		frame = sprite.PlayerPunchLoseFrame(idx)
+	case bf.boxingExhausted:
+		frame = sprite.PlayerPunchFrame(sprite.PlayerPunchGuard)
 	case bf.playerInvincible > 0:
 		frame = sprite.PlayerPunchFrame(sprite.PlayerPunchGuard)
 	case bf.playerThrowing:
