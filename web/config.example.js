@@ -1,4 +1,3 @@
-// Copy to config.js and set your SQLite Cloud connection string.
-// Do not commit config.js — it contains your API key.
-window.FLAPPY_SQLITECLOUD_URL =
-  "sqlitecloud://YOUR_HOST.g5.sqlite.cloud:8860/flappypappy.sqlite?apikey=YOUR_API_KEY";
+// Copy to config.js. Do not commit config.js — it contains your API key.
+window.FLAPPY_SCORE_API_URL = "https://flappy-pappy.se";
+window.FLAPPY_SCORE_API_KEY = "YOUR_API_KEY";

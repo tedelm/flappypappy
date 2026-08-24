@@ -28,7 +28,7 @@ func jsHasScoreURL() bool {
 	if fn.Type() == js.TypeFunction {
 		return fn.Invoke().Bool()
 	}
-	v := js.Global().Get("FLAPPY_SQLITECLOUD_URL")
+	v := js.Global().Get("FLAPPY_SCORE_API_URL")
 	if v.Type() != js.TypeString {
 		return false
 	}

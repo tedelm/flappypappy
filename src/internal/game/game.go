@@ -1539,7 +1539,7 @@ func drawHighScoresScreen(screen *ebiten.Image, scores *HighScores) {
 		drawLabel(screen, "Could not reach leaderboard", ScreenW/2, 180, ColorTextMuted)
 	} else if !scores.Active() {
 		drawLabel(screen, "Scores not synced", ScreenW/2, 160, ColorTextMuted)
-		drawLabel(screen, "Set FLAPPY_SQLITECLOUD_URL", ScreenW/2, 190, ColorTextMuted)
+		drawLabel(screen, "Set FLAPPY_SCORE_API_URL", ScreenW/2, 190, ColorTextMuted)
 		drawLabel(screen, "or web/config.js", ScreenW/2, 218, ColorTextMuted)
 	} else {
 		entries := scores.List()

@@ -22,7 +22,7 @@ go.work.sum
 docs/*
 !docs/.gitkeep
 
-# SQLite Cloud credentials (web)
+# Score API credentials (web)
 web/config.js
 
 # Compressed MP3 backups

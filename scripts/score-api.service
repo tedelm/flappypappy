@@ -1,0 +1,21 @@
+[Unit]
+Description=Flappy high score HTTP API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=flappy
+Group=flappy
+EnvironmentFile=/etc/flappy/scoreapi.env
+ExecStart=/usr/local/bin/scoreapi
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/flappy
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

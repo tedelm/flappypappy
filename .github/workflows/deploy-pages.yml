@@ -21,34 +21,20 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: "1.25.x"
-          cache-dependency-path: src/go.sum
-
-      - name: Write SQLite Cloud config
+      - name: Write redirect site
         env:
-          FLAPPY_SQLITECLOUD_URL: ${{ secrets.FLAPPY_SQLITECLOUD_URL }}
+          FLAPPY_PUBLIC_URL: ${{ secrets.FLAPPY_PUBLIC_URL }}
         run: |
-          if [ -n "$FLAPPY_SQLITECLOUD_URL" ]; then
-            printf 'window.FLAPPY_SQLITECLOUD_URL = %s;\n' \
-              "$(python3 -c 'import json, os; print(json.dumps(os.environ["FLAPPY_SQLITECLOUD_URL"]))')" \
-              > web/config.js
-          else
-            echo 'window.FLAPPY_SQLITECLOUD_URL = "";' > web/config.js
-          fi
-
-      - name: Build web bundle
-        run: bash scripts/build-web.sh
+          mkdir -p site
+          TARGET="${FLAPPY_PUBLIC_URL:-https://flappy-pappy.se}"
+          TARGET="${TARGET%/}/"
+          export TARGET
+          python3 -c 'import json,os; t=os.environ["TARGET"]; e=json.dumps(t); open("site/index.html","w",encoding="utf-8").write("<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<meta http-equiv=\"refresh\" content=\"0;url=%s\">\n<link rel=\"canonical\" href=%s>\n<title>Flappy Pappy</title>\n<script>location.replace(%s);</script>\n</head>\n<body>\n<p>Moved to <a href=%s>%s</a>.</p>\n</body>\n</html>\n" % (t,e,e,e,t)); print("redirect ->", t)'
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: docs
+          path: site
 
       - name: Deploy to GitHub Pages
         id: deployment

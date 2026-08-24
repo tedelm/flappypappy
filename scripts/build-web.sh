@@ -24,7 +24,10 @@ cp "$WEB/manifest.webmanifest" "$DOCS/"
 if [ -f "$WEB/config.js" ]; then
   cp "$WEB/config.js" "$DOCS/"
 else
-  echo 'window.FLAPPY_SQLITECLOUD_URL = "";' > "$DOCS/config.js"
+  printf '%s\n' \
+    'window.FLAPPY_SCORE_API_URL = "";' \
+    'window.FLAPPY_SCORE_API_KEY = "";' \
+    > "$DOCS/config.js"
 fi
 
 BUILD_ID="$(date -u +%Y%m%d%H%M%S)"
