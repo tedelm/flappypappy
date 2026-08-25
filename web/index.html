@@ -228,6 +228,9 @@
     let goRequestedRefreshLimit = 0;
     let scoreAPIReady = false;
     let scoreAPIInit = null;
+    let activeRunId = "";
+    let activeRunToken = "";
+    let beginRunPromise = null;
 
     function scoreAPIBase() {
       return String(window.FLAPPY_SCORE_API_URL || "").replace(/\/+$/, "");
@@ -253,6 +256,7 @@
     }
 
     window.flappySaveScore = function() {};
+    window.flappyBeginRun = function() {};
     window.flappyRefreshScores = function(limit) {
       if (limit > goRequestedRefreshLimit) {
         goRequestedRefreshLimit = limit;
@@ -289,6 +293,14 @@
       }
     }
 
+    async function waitForBeginRun() {
+      if (beginRunPromise) {
+        try {
+          await beginRunPromise;
+        } catch (_) {}
+      }
+    }
+
     async function ensureScoreAPI() {
       const base = scoreAPIBase();
       if (!base) return false;
@@ -315,16 +327,47 @@
         ensureScoreAPI().catch((err) => console.error("score api init:", err));
       };
 
+      window.flappyBeginRun = function(difficulty) {
+        beginRunPromise = (async () => {
+          activeRunId = "";
+          activeRunToken = "";
+          const ok = await ensureScoreAPI();
+          if (!ok) return;
+          const resp = await fetch(scoreAPIBase() + "/runs", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ difficulty: difficulty || "EASY" }),
+          });
+          if (!resp.ok) throw new Error("begin run HTTP " + resp.status);
+          const data = await resp.json();
+          activeRunId = data.run_id || "";
+          activeRunToken = data.token || "";
+          if (!activeRunId || !activeRunToken) {
+            throw new Error("begin run: empty token");
+          }
+        })().catch((err) => {
+          console.error("begin run:", err);
+          activeRunId = "";
+          activeRunToken = "";
+        });
+      };
+
       window.flappySaveScore = function(name, score, difficulty, level) {
         pendingSaves++;
         (async () => {
           try {
             const ok = await ensureScoreAPI();
             if (!ok) return;
+            await waitForBeginRun();
+            if (!activeRunId || !activeRunToken) {
+              throw new Error("save: no active run");
+            }
             const resp = await fetch(scoreAPIBase() + "/scores", {
               method: "POST",
               headers: scoreAPIHeaders(true),
               body: JSON.stringify({
+                run_id: activeRunId,
+                token: activeRunToken,
                 player_name: name,
                 score: score,
                 difficulty: difficulty,
@@ -332,6 +375,8 @@
               }),
             });
             if (!resp.ok) throw new Error("save HTTP " + resp.status);
+            activeRunId = "";
+            activeRunToken = "";
             window.flappyRefreshScores(10);
           } catch (err) {
             console.error("score save:", err);

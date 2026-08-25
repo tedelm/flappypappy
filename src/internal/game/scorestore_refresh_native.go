@@ -25,6 +25,12 @@ func saveScoreAsync(h *HighScores, store ScoreStore, name string, score int, dif
 	h.saveWG.Add(1)
 	go func() {
 		defer h.saveWG.Done()
+		h.mu.Lock()
+		ready := h.runReady
+		h.mu.Unlock()
+		if ready != nil {
+			<-ready
+		}
 		if err := store.Save(name, score, diff, level); err != nil {
 			log.Printf("highscores: save: %v", err)
 			return

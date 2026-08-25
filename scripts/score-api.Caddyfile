@@ -7,6 +7,9 @@
 	handle /health {
 		reverse_proxy 127.0.0.1:8088
 	}
+	handle /runs* {
+		reverse_proxy 127.0.0.1:8088
+	}
 	handle /scores* {
 		reverse_proxy 127.0.0.1:8088
 	}

@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -19,12 +20,31 @@ type httpScoreStore struct {
 	baseURL string
 	apiKey  string
 	client  *http.Client
+	mu      sync.Mutex
+	runID   string
+	token   string
 }
 
 type scoreAPIRow struct {
 	PlayerName string `json:"player_name"`
 	Score      int    `json:"score"`
 	Level      int    `json:"level"`
+	Difficulty string `json:"difficulty"`
+}
+
+type scoreAPISubmit struct {
+	RunID      string `json:"run_id"`
+	Token      string `json:"token"`
+	PlayerName string `json:"player_name"`
+	Score      int    `json:"score"`
+	Level      int    `json:"level"`
+	Difficulty string `json:"difficulty"`
+}
+
+type runStartResponse struct {
+	RunID      string `json:"run_id"`
+	Token      string `json:"token"`
+	IssuedAt   string `json:"issued_at"`
 	Difficulty string `json:"difficulty"`
 }
 
@@ -179,8 +199,54 @@ func (s *httpScoreStore) EnsureSchema() error {
 	return nil
 }
 
+func (s *httpScoreStore) BeginRun(difficulty Difficulty) error {
+	s.mu.Lock()
+	s.runID = ""
+	s.token = ""
+	s.mu.Unlock()
+
+	body, err := json.Marshal(map[string]string{"difficulty": difficulty.Name()})
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequest(http.MethodPost, s.baseURL+"/runs", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		io.Copy(io.Discard, resp.Body)
+		return fmt.Errorf("begin run: HTTP %d", resp.StatusCode)
+	}
+	var out runStartResponse
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return err
+	}
+	if out.RunID == "" || out.Token == "" {
+		return fmt.Errorf("begin run: empty token")
+	}
+	s.mu.Lock()
+	s.runID = out.RunID
+	s.token = out.Token
+	s.mu.Unlock()
+	return nil
+}
+
 func (s *httpScoreStore) Save(name string, score int, difficulty Difficulty, level int) error {
-	body, err := json.Marshal(scoreAPIRow{
+	s.mu.Lock()
+	runID, token := s.runID, s.token
+	s.mu.Unlock()
+	if runID == "" || token == "" {
+		return fmt.Errorf("save: no active run (BeginRun required)")
+	}
+	body, err := json.Marshal(scoreAPISubmit{
+		RunID:      runID,
+		Token:      token,
 		PlayerName: normalizePlayerName(name),
 		Score:      score,
 		Level:      level,
@@ -193,7 +259,6 @@ func (s *httpScoreStore) Save(name string, score int, difficulty Difficulty, lev
 	if err != nil {
 		return err
 	}
-	s.setAuth(req)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := s.client.Do(req)
 	if err != nil {
@@ -204,6 +269,10 @@ func (s *httpScoreStore) Save(name string, score int, difficulty Difficulty, lev
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("save: HTTP %d", resp.StatusCode)
 	}
+	s.mu.Lock()
+	s.runID = ""
+	s.token = ""
+	s.mu.Unlock()
 	return nil
 }
 

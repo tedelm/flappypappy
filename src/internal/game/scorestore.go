@@ -3,6 +3,7 @@ package game
 type ScoreStore interface {
 	Active() bool
 	EnsureSchema() error
+	BeginRun(difficulty Difficulty) error
 	Save(name string, score int, difficulty Difficulty, level int) error
 	Top(limit int) ([]HighScoreEntry, error)
 }

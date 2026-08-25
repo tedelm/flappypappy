@@ -81,11 +81,15 @@ fi
 if [[ -z "${API_KEY:-}" ]]; then
   API_KEY="$(openssl rand -hex 24 2>/dev/null || python3 -c 'import secrets; print(secrets.token_hex(24))')"
 fi
+if [[ -z "${RUN_HMAC_SECRET:-}" ]]; then
+  RUN_HMAC_SECRET="$(openssl rand -hex 32 2>/dev/null || python3 -c 'import secrets; print(secrets.token_hex(32))')"
+fi
 
 cat > "$ENV_FILE" <<EOF
 LISTEN=${LISTEN}
 DB_PATH=${DB_PATH}
 API_KEY=${API_KEY}
+RUN_HMAC_SECRET=${RUN_HMAC_SECRET}
 EOF
 chown root:flappy "$ENV_FILE"
 chmod 0640 "$ENV_FILE"
@@ -208,7 +212,8 @@ systemctl --no-pager --full status score-api.service || true
 echo
 echo "score API + site installed."
 echo "  health (local): curl -sS http://${LISTEN}/health"
-echo "  API_KEY is in ${ENV_FILE}"
+echo "  API_KEY is in ${ENV_FILE} (client GET /scores)"
+echo "  RUN_HMAC_SECRET is in ${ENV_FILE} (server-only; never put in config.js)"
 if [[ -n "$SCORE_API_HOST" && "$SKIP_CADDY" != "1" ]]; then
   echo "  public game URL: https://${SCORE_API_HOST}/"
   echo "  FLAPPY_SCORE_API_URL=https://${SCORE_API_HOST}"

@@ -56,6 +56,11 @@ func (jsStore) EnsureSchema() error {
 	return nil
 }
 
+func (jsStore) BeginRun(difficulty Difficulty) error {
+	callJS("flappyBeginRun", difficulty.Name())
+	return nil
+}
+
 func (jsStore) Save(name string, score int, difficulty Difficulty, level int) error {
 	callJS("flappySaveScore", normalizePlayerName(name), score, difficulty.Name(), level)
 	return nil
