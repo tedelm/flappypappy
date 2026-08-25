@@ -37,5 +37,6 @@ fi
 sed "s/__BUILD_ID__/$BUILD_ID/g" "$WEB/sw.js" > "$DOCS/sw.js"
 
 cp -r "$WEB/icons" "$DOCS/"
+cp "$WEB/favicon.ico" "$DOCS/"
 
 echo "Web build complete: $DOCS (cache: flappy-beer-$BUILD_ID)"

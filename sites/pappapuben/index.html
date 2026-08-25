@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#05080f">
+  <meta name="description" content="PappaPuben — arcade transmissions from the pub dimension.">
+  <title>PappaPuben</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="favicon.ico" sizes="any">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&family=Press+Start+2P&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #05080f;
+      --cyan: #3ef0ff;
+      --cyan-dim: #1a8a99;
+      --amber: #ffbf3d;
+      --amber-glow: rgba(255, 191, 61, 0.45);
+      --cyan-glow: rgba(62, 240, 255, 0.35);
+      --fog: #9ab0c4;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    html, body {
+      min-height: 100%;
+      height: 100%;
+    }
+
+    body {
+      font-family: Orbitron, sans-serif;
+      color: var(--fog);
+      background: var(--bg);
+      overflow-x: hidden;
+    }
+
+    .stage {
+      position: relative;
+      min-height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: clamp(1.5rem, 5vw, 3rem);
+      text-align: center;
+      isolation: isolate;
+    }
+
+    /* CRT atmosphere: radial vignette + grid */
+    .stage::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      z-index: -2;
+      background:
+        radial-gradient(ellipse 80% 60% at 50% 40%, #0c1528 0%, var(--bg) 70%),
+        linear-gradient(rgba(62, 240, 255, 0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(62, 240, 255, 0.04) 1px, transparent 1px);
+      background-size: auto, 48px 48px, 48px 48px;
+      background-position: center, center, center;
+    }
+
+    /* Drifting scanlines */
+    .scanlines {
+      pointer-events: none;
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+      background: repeating-linear-gradient(
+        to bottom,
+        transparent 0,
+        transparent 2px,
+        rgba(0, 0, 0, 0.18) 2px,
+        rgba(0, 0, 0, 0.18) 4px
+      );
+      animation: scan-drift 8s linear infinite;
+      mix-blend-mode: multiply;
+      opacity: 0.55;
+    }
+
+    @keyframes scan-drift {
+      from { background-position: 0 0; }
+      to { background-position: 0 48px; }
+    }
+
+    .mascot {
+      display: block;
+      width: clamp(96px, 22vw, 160px);
+      height: auto;
+      margin: 0 auto clamp(1rem, 3vw, 1.5rem);
+      image-rendering: auto;
+      filter: drop-shadow(0 0 10px var(--cyan-glow)) drop-shadow(0 0 18px var(--amber-glow));
+    }
+
+    .brand {
+      font-family: "Press Start 2P", monospace;
+      font-size: clamp(1.35rem, 6.5vw, 3.25rem);
+      line-height: 1.35;
+      letter-spacing: 0.04em;
+      color: var(--cyan);
+      text-shadow:
+        0 0 8px var(--cyan-glow),
+        0 0 28px var(--cyan-glow),
+        2px 2px 0 #022;
+      animation: title-flicker 4.5s ease-in-out infinite;
+    }
+
+    @keyframes title-flicker {
+      0%, 92%, 100% { opacity: 1; filter: brightness(1); }
+      93% { opacity: 0.72; filter: brightness(1.35); }
+      94% { opacity: 1; }
+      96% { opacity: 0.85; filter: brightness(1.2); }
+      97% { opacity: 1; }
+    }
+
+    .tagline {
+      margin-top: clamp(1.25rem, 3vw, 2rem);
+      max-width: 28rem;
+      font-size: clamp(0.7rem, 2.2vw, 0.95rem);
+      font-weight: 500;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--fog);
+    }
+
+    .cta {
+      display: inline-block;
+      margin-top: clamp(2rem, 5vw, 3rem);
+      padding: 1rem 1.6rem;
+      font-family: "Press Start 2P", monospace;
+      font-size: clamp(0.55rem, 2vw, 0.75rem);
+      line-height: 1.4;
+      text-decoration: none;
+      color: var(--bg);
+      background: var(--amber);
+      border: 3px solid var(--amber);
+      box-shadow:
+        0 0 12px var(--amber-glow),
+        0 0 32px var(--amber-glow),
+        4px 4px 0 #1a1000;
+      animation: cta-pulse 2.4s ease-in-out infinite;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .cta:hover,
+    .cta:focus-visible {
+      transform: translate(-2px, -2px);
+      box-shadow:
+        0 0 18px var(--amber-glow),
+        0 0 40px var(--amber-glow),
+        6px 6px 0 #1a1000;
+      outline: none;
+    }
+
+    .cta:active {
+      transform: translate(1px, 1px);
+      box-shadow:
+        0 0 10px var(--amber-glow),
+        2px 2px 0 #1a1000;
+    }
+
+    @keyframes cta-pulse {
+      0%, 100% { box-shadow: 0 0 12px var(--amber-glow), 0 0 28px var(--amber-glow), 4px 4px 0 #1a1000; }
+      50% { box-shadow: 0 0 20px var(--amber-glow), 0 0 48px var(--amber-glow), 4px 4px 0 #1a1000; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .scanlines,
+      .brand,
+      .cta { animation: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="scanlines" aria-hidden="true"></div>
+  <main class="stage">
+    <img class="mascot" src="img/ppfish_swim.gif" alt="" width="160" height="160">
+    <h1 class="brand">PappaPuben</h1>
+    <p class="tagline">Arcade signals from the pub dimension</p>
+    <a class="cta" href="https://flappy-pappy.se">Play Flappy Pappy</a>
+  </main>
+</body>
+</html>

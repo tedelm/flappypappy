@@ -60,7 +60,16 @@ If neither env vars nor `web/config.js` are set, HIGH SCORES shows a sync hint a
 
 ## Production (Strato / flappy-pappy.se)
 
-DNS A for `flappy-pappy.se` → `31.70.88.32`.
+DNS A records → `31.70.88.32`:
+
+| Host | Purpose |
+|------|---------|
+| `flappy-pappy.se` | Game + score API |
+| `flappy-pappy.pappapuben.se` | 301 redirect → `https://flappy-pappy.se` |
+| `pappapuben.se` | Landing (`sites/pappapuben` → `/var/www/pappapuben`) |
+| `www.pappapuben.se` | Same landing (A or CNAME) |
+
+Caddy obtains Let's Encrypt certs automatically once DNS points here and ports 80/443 are open.
 
 ### Install API + Caddy on the container
 
@@ -68,7 +77,7 @@ DNS A for `flappy-pappy.se` → `31.70.88.32`.
 sudo bash scripts/install-score-api.sh
 ```
 
-Default host is `flappy-pappy.se`. That installs Go/build tools if needed, builds `scoreapi`, writes `/etc/flappy/scoreapi.env` (`API_KEY` + `RUN_HMAC_SECRET`), serves static files from `/var/www/flappy`, and puts Caddy in front (Let's Encrypt) for HTTPS.
+Default host is `flappy-pappy.se`. That installs Go/build tools if needed, builds `scoreapi`, writes `/etc/flappy/scoreapi.env` (`API_KEY` + `RUN_HMAC_SECRET`), serves the game from `/var/www/flappy`, deploys the PappaPuben landing to `/var/www/pappapuben`, and puts Caddy in front (Let's Encrypt) for HTTPS — including the subdomain redirect and `pappapuben.se`.
 
 Re-running install on an existing host keeps the current `API_KEY` and generates `RUN_HMAC_SECRET` if missing, then rebuilds the binary and refreshes the Caddyfile (includes `/runs`).
 
@@ -91,6 +100,14 @@ sudo bash scripts/deploy-web.sh
 `deploy-web.sh` writes `config.js` with `https://flappy-pappy.se` and the key from `/etc/flappy/scoreapi.env`.
 
 You can also pass a build into install: `sudo WEB_ROOT=/path/to/docs bash scripts/install-score-api.sh`.
+
+### Deploy / refresh PappaPuben landing
+
+```bash
+sudo bash scripts/deploy-pappapuben.sh
+```
+
+Source is `sites/pappapuben/` (CRT-style landing with CTA to the game). After DNS is live, `systemctl reload caddy` if you only updated the Caddyfile by hand.
 
 ### GitHub Pages redirect
 

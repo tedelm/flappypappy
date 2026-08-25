@@ -18,6 +18,8 @@ DB_PATH="${DB_PATH:-/var/lib/flappy/flappypappy.sqlite}"
 SCORE_API_HOST="${SCORE_API_HOST:-flappy-pappy.se}"
 WEB_DEST="${WEB_DEST:-/var/www/flappy}"
 WEB_ROOT="${WEB_ROOT:-}"
+PAPPAPUBEN_SRC="${PAPPAPUBEN_SRC:-$ROOT/sites/pappapuben}"
+PAPPAPUBEN_DEST="${PAPPAPUBEN_DEST:-/var/www/pappapuben}"
 SKIP_CADDY="${SKIP_CADDY:-0}"
 SKIP_UFW="${SKIP_UFW:-0}"
 
@@ -172,6 +174,19 @@ chown -R root:root "$WEB_DEST"
 find "$WEB_DEST" -type d -exec chmod 0755 {} \;
 find "$WEB_DEST" -type f -exec chmod 0644 {} \;
 
+# PappaPuben landing (pappapuben.se)
+install -d -o root -g root -m 0755 "$PAPPAPUBEN_DEST"
+if [[ -f "$PAPPAPUBEN_SRC/index.html" ]]; then
+  echo "deploying pappapuben from $PAPPAPUBEN_SRC -> $PAPPAPUBEN_DEST"
+  rsync -a --delete --exclude '.gitkeep' "$PAPPAPUBEN_SRC"/ "$PAPPAPUBEN_DEST"/
+else
+  echo "no pappapuben landing at $PAPPAPUBEN_SRC (expected index.html)" >&2
+  exit 1
+fi
+chown -R root:root "$PAPPAPUBEN_DEST"
+find "$PAPPAPUBEN_DEST" -type d -exec chmod 0755 {} \;
+find "$PAPPAPUBEN_DEST" -type f -exec chmod 0644 {} \;
+
 install_caddy() {
   if ! command -v caddy >/dev/null 2>&1; then
     curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
@@ -217,6 +232,9 @@ echo "  RUN_HMAC_SECRET is in ${ENV_FILE} (server-only; never put in config.js)"
 if [[ -n "$SCORE_API_HOST" && "$SKIP_CADDY" != "1" ]]; then
   echo "  public game URL: https://${SCORE_API_HOST}/"
   echo "  FLAPPY_SCORE_API_URL=https://${SCORE_API_HOST}"
+  echo "  pappapuben URL: https://pappapuben.se/"
+  echo "  alias redirect: https://flappy-pappy.pappapuben.se/ -> https://flappy-pappy.se/"
 fi
 echo "  set FLAPPY_SCORE_API_KEY from ${ENV_FILE}"
 echo "  to refresh the game: build off-box, then sudo bash scripts/deploy-web.sh"
+echo "  to refresh landing: sudo bash scripts/deploy-pappapuben.sh"

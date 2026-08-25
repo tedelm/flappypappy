@@ -55,5 +55,6 @@ $swTemplate = Get-Content (Join-Path $Web "sw.js") -Raw
 $swTemplate.Replace("__BUILD_ID__", $BuildId) | Set-Content (Join-Path $Docs "sw.js") -NoNewline
 
 Copy-Item (Join-Path $Web "icons") (Join-Path $Docs "icons") -Recurse
+Copy-Item (Join-Path $Web "favicon.ico") (Join-Path $Docs "favicon.ico")
 
 Write-Host "Web build complete: $Docs (cache: flappy-beer-$BuildId)"

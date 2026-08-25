@@ -19,3 +19,16 @@
 		try_files {path} /index.html
 	}
 }
+
+# Subdomain alias → main game host
+flappy-pappy.pappapuben.se {
+	redir https://flappy-pappy.se{uri} permanent
+}
+
+# PappaPuben landing (sites/pappapuben → /var/www/pappapuben)
+pappapuben.se, www.pappapuben.se {
+	encode gzip
+	root * /var/www/pappapuben
+	file_server
+	try_files {path} /index.html
+}

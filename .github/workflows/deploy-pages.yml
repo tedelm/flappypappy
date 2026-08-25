@@ -21,6 +21,9 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Write redirect site
         env:
           FLAPPY_PUBLIC_URL: ${{ secrets.FLAPPY_PUBLIC_URL }}
@@ -29,7 +32,8 @@ jobs:
           TARGET="${FLAPPY_PUBLIC_URL:-https://flappy-pappy.se}"
           TARGET="${TARGET%/}/"
           export TARGET
-          python3 -c 'import json,os; t=os.environ["TARGET"]; e=json.dumps(t); open("site/index.html","w",encoding="utf-8").write("<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<meta http-equiv=\"refresh\" content=\"0;url=%s\">\n<link rel=\"canonical\" href=%s>\n<title>Flappy Pappy</title>\n<script>location.replace(%s);</script>\n</head>\n<body>\n<p>Moved to <a href=%s>%s</a>.</p>\n</body>\n</html>\n" % (t,e,e,e,t)); print("redirect ->", t)'
+          python3 -c 'import json,os; t=os.environ["TARGET"]; e=json.dumps(t); open("site/index.html","w",encoding="utf-8").write("<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<meta http-equiv=\"refresh\" content=\"0;url=%s\">\n<link rel=\"canonical\" href=%s>\n<link rel=\"icon\" href=\"favicon.ico\" sizes=\"any\">\n<title>Flappy Pappy</title>\n<script>location.replace(%s);</script>\n</head>\n<body>\n<p>Moved to <a href=%s>%s</a>.</p>\n</body>\n</html>\n" % (t,e,e,e,t)); print("redirect ->", t)'
+          cp web/favicon.ico site/favicon.ico
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
