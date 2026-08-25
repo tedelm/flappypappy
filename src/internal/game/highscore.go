@@ -27,6 +27,7 @@ type HighScores struct {
 	saveWG          sync.WaitGroup
 	refreshPending  bool
 	loading         bool
+	runReady        chan struct{}
 }
 
 func NewHighScores(init StoreInit) *HighScores {
@@ -98,6 +99,24 @@ func normalizePlayerName(name string) string {
 		name = string(runes[:MaxPlayerNameLen])
 	}
 	return name
+}
+
+func (h *HighScores) BeginRun(diff Difficulty) {
+	h.ensureActive()
+	if !h.active {
+		return
+	}
+	done := make(chan struct{})
+	h.mu.Lock()
+	h.runReady = done
+	h.mu.Unlock()
+	store := h.store
+	go func() {
+		defer close(done)
+		if err := store.BeginRun(diff); err != nil {
+			log.Printf("highscores: begin run: %v", err)
+		}
+	}()
 }
 
 func (h *HighScores) Add(name string, score int, diff Difficulty, level int) {

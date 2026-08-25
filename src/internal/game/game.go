@@ -221,6 +221,7 @@ func (g *Game) startGame() {
 	g.bgScrollX = 0
 	g.decorSeed = rand.Int()
 	g.beginLevelIntro()
+	g.highScores.BeginRun(g.difficulty)
 }
 
 func (g *Game) applyDebugStart() {
@@ -247,12 +248,14 @@ func (g *Game) applyDebugStart() {
 
 	if DebugStartBoss != 0 {
 		g.enterBossIntro()
+		g.highScores.BeginRun(g.difficulty)
 		return
 	}
 
 	g.pipes.SetSpawnLimit(DadsRequiredForLevel(g.level))
 	g.state = StatePlaying
 	g.flap()
+	g.highScores.BeginRun(g.difficulty)
 }
 
 func (g *Game) beginPlaying() {

@@ -33,6 +33,10 @@ Or use the VS Code / Cursor launch config **Flappy Web (with leaderboard)**.
 
 Every completed game is saved to a shared `highscores` table. The game talks HTTP JSON to `scoreapi` on the same host as the web build (`https://flappy-pappy.se`).
 
+Writes use a **server-issued run token** (`POST /runs` then `POST /scores` with HMAC). The HMAC secret (`RUN_HMAC_SECRET`) stays only in `/etc/flappy/scoreapi.env` — never in `config.js`. Blind score spoofing without a valid unused run is rejected; runs also enforce a minimum elapsed time vs score.
+
+`FLAPPY_SCORE_API_KEY` is still required for **GET /scores** (and is visible in the web client).
+
 ### Desktop
 
 ```powershell
@@ -52,7 +56,7 @@ If neither env vars nor `web/config.js` are set, HIGH SCORES shows a sync hint a
 2. Set `FLAPPY_SCORE_API_URL` / `FLAPPY_SCORE_API_KEY`
 3. Run `.\scripts\serve-web.ps1`
 
-**Note:** The API key is visible in the web client. Use a dedicated key and rotate it if needed.
+**Note:** The GET API key is visible in the web client. Rotate it if needed. Do not put `RUN_HMAC_SECRET` in client config.
 
 ## Production (Strato / flappy-pappy.se)
 
@@ -64,7 +68,9 @@ DNS A for `flappy-pappy.se` → `31.70.88.32`.
 sudo bash scripts/install-score-api.sh
 ```
 
-Default host is `flappy-pappy.se`. That installs Go/build tools if needed, builds `scoreapi`, writes `/etc/flappy/scoreapi.env`, serves static files from `/var/www/flappy`, and puts Caddy in front (Let's Encrypt) for HTTPS.
+Default host is `flappy-pappy.se`. That installs Go/build tools if needed, builds `scoreapi`, writes `/etc/flappy/scoreapi.env` (`API_KEY` + `RUN_HMAC_SECRET`), serves static files from `/var/www/flappy`, and puts Caddy in front (Let's Encrypt) for HTTPS.
+
+Re-running install on an existing host keeps the current `API_KEY` and generates `RUN_HMAC_SECRET` if missing, then rebuilds the binary and refreshes the Caddyfile (includes `/runs`).
 
 If the build fails with `signal: killed`, add swap or install a prebuilt binary with `SCOREAPI_BIN=/path/to/scoreapi`.
 

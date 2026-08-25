@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -26,19 +28,46 @@ CREATE TABLE IF NOT EXISTS highscores (
 	difficulty   TEXT    NOT NULL,
 	created_at   TEXT    NOT NULL DEFAULT (datetime('now'))
 );`
-	createIndexSQL   = `CREATE INDEX IF NOT EXISTS idx_highscores_score ON highscores(score DESC);`
+	createRunsSQL = `
+CREATE TABLE IF NOT EXISTS runs (
+	id         TEXT PRIMARY KEY,
+	difficulty TEXT NOT NULL,
+	issued_at  TEXT NOT NULL,
+	used_at    TEXT
+);`
+	createIndexSQL    = `CREATE INDEX IF NOT EXISTS idx_highscores_score ON highscores(score DESC);`
 	addLevelColumnSQL = `ALTER TABLE highscores ADD COLUMN level INTEGER NOT NULL DEFAULT 1;`
-	maxNameLen       = 12
-	maxLimit         = 50
-	defaultLimit     = 10
-	defaultListen    = "127.0.0.1:8088"
-	defaultDBPath    = "/var/lib/flappy/flappypappy.sqlite"
+	maxNameLen        = 12
+	maxLimit          = 50
+	defaultLimit      = 10
+	defaultListen     = "127.0.0.1:8088"
+	defaultDBPath     = "/var/lib/flappy/flappypappy.sqlite"
 )
 
 type scoreRow struct {
 	PlayerName string `json:"player_name"`
 	Score      int    `json:"score"`
 	Level      int    `json:"level"`
+	Difficulty string `json:"difficulty"`
+}
+
+type scoreSubmit struct {
+	RunID      string `json:"run_id"`
+	Token      string `json:"token"`
+	PlayerName string `json:"player_name"`
+	Score      int    `json:"score"`
+	Level      int    `json:"level"`
+	Difficulty string `json:"difficulty"`
+}
+
+type runStartRequest struct {
+	Difficulty string `json:"difficulty"`
+}
+
+type runStartResponse struct {
+	RunID      string `json:"run_id"`
+	Token      string `json:"token"`
+	IssuedAt   string `json:"issued_at"`
 	Difficulty string `json:"difficulty"`
 }
 
@@ -49,12 +78,18 @@ func main() {
 	if apiKey == "" {
 		log.Fatal("API_KEY is required")
 	}
+	runSecret := strings.TrimSpace(os.Getenv("RUN_HMAC_SECRET"))
+	if runSecret == "" {
+		log.Fatal("RUN_HMAC_SECRET is required")
+	}
 
 	db, err := openDB(dbPath)
 	if err != nil {
 		log.Fatalf("open db: %v", err)
 	}
 	defer db.Close()
+
+	limiter := newRunLimiter(runsPerMinute, time.Minute)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
@@ -63,6 +98,37 @@ func main() {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	})
+	mux.HandleFunc("POST /runs", func(w http.ResponseWriter, r *http.Request) {
+		if !limiter.allow(time.Now()) {
+			http.Error(w, "rate limited", http.StatusTooManyRequests)
+			return
+		}
+		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<16))
+		if err != nil {
+			http.Error(w, "invalid body", http.StatusBadRequest)
+			return
+		}
+		var in runStartRequest
+		if len(bytes.TrimSpace(body)) > 0 {
+			if err := json.Unmarshal(body, &in); err != nil {
+				http.Error(w, "invalid json", http.StatusBadRequest)
+				return
+			}
+		}
+		difficulty := normalizeDifficulty(in.Difficulty)
+		runID, token, issuedAt, err := createRun(db, runSecret, difficulty, time.Now())
+		if err != nil {
+			log.Printf("create run: %v", err)
+			http.Error(w, "create failed", http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusCreated, runStartResponse{
+			RunID:      runID,
+			Token:      token,
+			IssuedAt:   issuedAt,
+			Difficulty: difficulty,
+		})
 	})
 	mux.HandleFunc("GET /scores", requireAPIKey(apiKey, func(w http.ResponseWriter, r *http.Request) {
 		limit := defaultLimit
@@ -85,8 +151,8 @@ func main() {
 		}
 		writeJSON(w, http.StatusOK, rows)
 	}))
-	mux.HandleFunc("POST /scores", requireAPIKey(apiKey, func(w http.ResponseWriter, r *http.Request) {
-		var in scoreRow
+	mux.HandleFunc("POST /scores", func(w http.ResponseWriter, r *http.Request) {
+		var in scoreSubmit
 		dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
 		if err := dec.Decode(&in); err != nil {
 			http.Error(w, "invalid json", http.StatusBadRequest)
@@ -94,20 +160,39 @@ func main() {
 		}
 		in.PlayerName = normalizePlayerName(in.PlayerName)
 		in.Difficulty = normalizeDifficulty(in.Difficulty)
-		if in.Score < 0 {
-			http.Error(w, "invalid score", http.StatusBadRequest)
-			return
-		}
+		in.RunID = strings.TrimSpace(in.RunID)
+		in.Token = strings.TrimSpace(in.Token)
 		if in.Level < 1 {
 			in.Level = 1
 		}
-		if err := insertScore(db, in); err != nil {
-			log.Printf("insert score: %v", err)
-			http.Error(w, "insert failed", http.StatusInternalServerError)
+		if in.RunID == "" || in.Token == "" {
+			http.Error(w, "run_id and token required", http.StatusBadRequest)
 			return
 		}
-		writeJSON(w, http.StatusCreated, in)
-	}))
+		err := consumeRunAndInsert(db, runSecret, in, time.Now())
+		switch {
+		case err == nil:
+			writeJSON(w, http.StatusCreated, scoreRow{
+				PlayerName: in.PlayerName,
+				Score:      in.Score,
+				Level:      in.Level,
+				Difficulty: in.Difficulty,
+			})
+		case errors.Is(err, errBadToken), errors.Is(err, errRunNotFound), errors.Is(err, errDiffMismatch):
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+		case errors.Is(err, errRunUsed):
+			http.Error(w, "run already used", http.StatusConflict)
+		case errors.Is(err, errTooFast):
+			http.Error(w, "score too fast", http.StatusBadRequest)
+		case errors.Is(err, errRunExpired):
+			http.Error(w, "run expired", http.StatusBadRequest)
+		case errors.Is(err, errScoreTooHigh), errors.Is(err, errLevelInvalid):
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		default:
+			log.Printf("insert score: %v", err)
+			http.Error(w, "insert failed", http.StatusInternalServerError)
+		}
+	})
 
 	handler := withCORS(mux)
 	srv := &http.Server{
@@ -139,6 +224,10 @@ func openDB(path string) (*sql.DB, error) {
 		return nil, err
 	}
 	if _, err := db.Exec(createTableSQL); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if _, err := db.Exec(createRunsSQL); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -177,20 +266,9 @@ func listScores(db *sql.DB, limit int) ([]scoreRow, error) {
 	return out, q.Err()
 }
 
-func insertScore(db *sql.DB, row scoreRow) error {
-	_, err := db.Exec(
-		`INSERT INTO highscores (player_name, score, difficulty, level) VALUES (?, ?, ?, ?)`,
-		row.PlayerName, row.Score, row.Difficulty, row.Level,
-	)
-	return err
-}
-
 func requireAPIKey(want string, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		got := strings.TrimSpace(r.Header.Get("X-API-Key"))
-		if got == "" {
-			got = strings.TrimSpace(r.URL.Query().Get("apikey"))
-		}
 		if got != want {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
@@ -251,10 +329,10 @@ func normalizePlayerName(name string) string {
 
 func normalizeDifficulty(s string) string {
 	switch strings.ToUpper(strings.TrimSpace(s)) {
-	case "HARD":
+	case "HARD", "NORMAL":
 		return "HARD"
-	case "NORMAL":
-		return "NORMAL"
+	case "INSANE":
+		return "INSANE"
 	default:
 		return "EASY"
 	}
