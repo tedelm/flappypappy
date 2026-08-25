@@ -27,3 +27,7 @@ web/config.js
 
 # Compressed MP3 backups
 *.orig.mp3
+*.sqlite.bkp
+*.sqlite
+flappypappy.sql.bkp
+
