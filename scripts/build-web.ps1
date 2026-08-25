@@ -35,7 +35,10 @@ $configSrc = Join-Path $Web "config.js"
 if (Test-Path $configSrc) {
     Copy-Item $configSrc $Docs
 } else {
-    'window.FLAPPY_SQLITECLOUD_URL = "";' | Set-Content (Join-Path $Docs "config.js") -NoNewline
+    @(
+        'window.FLAPPY_SCORE_API_URL = "";'
+        'window.FLAPPY_SCORE_API_KEY = "";'
+    ) | Set-Content (Join-Path $Docs "config.js")
 }
 
 $BuildId = (Get-Date).ToUniversalTime().ToString("yyyyMMddHHmmss")

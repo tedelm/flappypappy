@@ -219,21 +219,6 @@
   </script>
   <script src="config.js"></script>
   <script>
-    const CREATE_TABLE_SQL = `
-CREATE TABLE IF NOT EXISTS highscores (
-  id           INTEGER PRIMARY KEY AUTOINCREMENT,
-  player_name  TEXT    NOT NULL,
-  score        INTEGER NOT NULL,
-  level        INTEGER NOT NULL DEFAULT 1,
-  difficulty   TEXT    NOT NULL,
-  created_at   TEXT    NOT NULL DEFAULT (datetime('now'))
-);`;
-
-    const CREATE_INDEX_SQL =
-      "CREATE INDEX IF NOT EXISTS idx_highscores_score ON highscores(score DESC);";
-
-    let scoreDB = null;
-    let scoreDBInit = null;
     let scoresCache = [];
     let scoresReady = false;
     let bridgeLive = false;
@@ -241,6 +226,20 @@ CREATE TABLE IF NOT EXISTS highscores (
     let pendingSaves = 0;
     let goRequestedInit = false;
     let goRequestedRefreshLimit = 0;
+    let scoreAPIReady = false;
+    let scoreAPIInit = null;
+
+    function scoreAPIBase() {
+      return String(window.FLAPPY_SCORE_API_URL || "").replace(/\/+$/, "");
+    }
+
+    function scoreAPIHeaders(includeJSON) {
+      const headers = {};
+      const key = window.FLAPPY_SCORE_API_KEY || "";
+      if (key) headers["X-API-Key"] = key;
+      if (includeJSON) headers["Content-Type"] = "application/json";
+      return headers;
+    }
 
     function markBridgeLive() {
       bridgeLive = true;
@@ -269,7 +268,7 @@ CREATE TABLE IF NOT EXISTS highscores (
       return bridgeLive && scoresReady;
     };
     window.flappyHasScoreURL = function() {
-      return !!(window.FLAPPY_SQLITECLOUD_URL);
+      return !!scoreAPIBase();
     };
     window.flappyScoreBridgeLive = function() {
       return bridgeLive;
@@ -290,56 +289,49 @@ CREATE TABLE IF NOT EXISTS highscores (
       }
     }
 
-    function installLiveScoreBridge(Database) {
-      async function ensureScoreDB(url) {
-        const conn = url || window.FLAPPY_SQLITECLOUD_URL || "";
-        if (!conn) return null;
-        if (scoreDB) return scoreDB;
-        if (scoreDBInit) return scoreDBInit;
-        scoreDBInit = (async () => {
-          try {
-            const db = new Database(conn);
-            await db.sql(CREATE_TABLE_SQL);
-            try {
-              await db.sql(
-                "ALTER TABLE highscores ADD COLUMN level INTEGER NOT NULL DEFAULT 1"
-              );
-            } catch (err) {
-              const msg = String(err || "").toLowerCase();
-              if (!msg.includes("duplicate column")) {
-                throw err;
-              }
-            }
-            await db.sql(CREATE_INDEX_SQL);
-            scoreDB = db;
-            return db;
-          } catch (err) {
-            console.error("score db init:", err);
-            dbConnectFailed = true;
-            scoreDBInit = null;
-            return null;
-          }
-        })();
-        return scoreDBInit;
-      }
+    async function ensureScoreAPI() {
+      const base = scoreAPIBase();
+      if (!base) return false;
+      if (scoreAPIReady) return true;
+      if (scoreAPIInit) return scoreAPIInit;
+      scoreAPIInit = (async () => {
+        try {
+          const resp = await fetch(base + "/health");
+          if (!resp.ok) throw new Error("health HTTP " + resp.status);
+          scoreAPIReady = true;
+          return true;
+        } catch (err) {
+          console.error("score api init:", err);
+          dbConnectFailed = true;
+          scoreAPIInit = null;
+          return false;
+        }
+      })();
+      return scoreAPIInit;
+    }
 
-      window.flappyInitScoreDB = function(url) {
-        ensureScoreDB(url).catch((err) => console.error("score db init:", err));
+    function installLiveScoreBridge() {
+      window.flappyInitScoreDB = function() {
+        ensureScoreAPI().catch((err) => console.error("score api init:", err));
       };
 
       window.flappySaveScore = function(name, score, difficulty, level) {
         pendingSaves++;
         (async () => {
           try {
-            const db = await ensureScoreDB();
-            if (!db) return;
-            await db.sql(
-              "INSERT INTO highscores (player_name, score, difficulty, level) VALUES (?, ?, ?, ?)",
-              name,
-              score,
-              difficulty,
-              level
-            );
+            const ok = await ensureScoreAPI();
+            if (!ok) return;
+            const resp = await fetch(scoreAPIBase() + "/scores", {
+              method: "POST",
+              headers: scoreAPIHeaders(true),
+              body: JSON.stringify({
+                player_name: name,
+                score: score,
+                difficulty: difficulty,
+                level: level,
+              }),
+            });
+            if (!resp.ok) throw new Error("save HTTP " + resp.status);
             window.flappyRefreshScores(10);
           } catch (err) {
             console.error("score save:", err);
@@ -353,16 +345,18 @@ CREATE TABLE IF NOT EXISTS highscores (
         scoresReady = false;
         (async () => {
           await waitForPendingSaves();
-          const db = await ensureScoreDB();
-          if (!db) {
+          const ok = await ensureScoreAPI();
+          if (!ok) {
             scoresCache = [];
             return;
           }
-          const rows = await db.sql(
-            "SELECT player_name, score, level, difficulty FROM highscores ORDER BY score DESC, level DESC LIMIT ?",
-            limit
+          const resp = await fetch(
+            scoreAPIBase() + "/scores?limit=" + encodeURIComponent(limit),
+            { headers: scoreAPIHeaders(false) }
           );
-          scoresCache = rows.map((row) => ({
+          if (!resp.ok) throw new Error("refresh HTTP " + resp.status);
+          const rows = await resp.json();
+          scoresCache = (rows || []).map((row) => ({
             name: row.player_name,
             score: Number(row.score),
             level: Number(row.level || 1),
@@ -379,60 +373,20 @@ CREATE TABLE IF NOT EXISTS highscores (
 
       markBridgeLive();
 
-      if (goRequestedInit || window.FLAPPY_SQLITECLOUD_URL) {
+      if (goRequestedInit || scoreAPIBase()) {
         window.flappyInitScoreDB();
       }
       if (goRequestedRefreshLimit > 0) {
         window.flappyRefreshScores(goRequestedRefreshLimit);
-      } else if (window.FLAPPY_SQLITECLOUD_URL) {
+      } else if (scoreAPIBase()) {
         window.flappyRefreshScores(10);
       }
     }
 
-    function installDriverRequirePolyfill() {
-      if (window.__flappyDriverRequirePolyfill) return;
-      window.__flappyDriverRequirePolyfill = true;
-      const previousRequire = globalThis.require;
-      globalThis.require = function (name) {
-        if (name === "whatwg-url") {
-          if (typeof globalThis.URL === "undefined") {
-            throw new Error("URL is not available in this browser");
-          }
-          return { URL: globalThis.URL };
-        }
-        if (typeof previousRequire === "function") {
-          return previousRequire(name);
-        }
-        throw new Error("Unsupported require: " + name);
-      };
-    }
-
-    async function loadDatabaseClass() {
-      installDriverRequirePolyfill();
-      const driverCDNs = [
-        "https://esm.sh/@sqlitecloud/drivers@1.0.880",
-        "https://cdn.jsdelivr.net/npm/@sqlitecloud/drivers/+esm",
-      ];
-      let Database;
-      for (const url of driverCDNs) {
-        try {
-          ({ Database } = await import(url));
-          break;
-        } catch (err) {
-          console.warn("score bridge: failed to load driver from", url, err);
-        }
-      }
-      if (!Database) {
-        throw new Error("could not load SQLite Cloud driver");
-      }
-      return Database;
-    }
-
     async function initScoreBridge() {
-      if (!window.FLAPPY_SQLITECLOUD_URL) return;
+      if (!scoreAPIBase()) return;
       try {
-        const Database = await loadDatabaseClass();
-        installLiveScoreBridge(Database);
+        installLiveScoreBridge();
       } catch (err) {
         console.error("score bridge:", err);
         markBridgeFailed();

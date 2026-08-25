@@ -3,64 +3,87 @@
 package game
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
-
-	sqlitecloud "github.com/sqlitecloud/sqlitecloud-go"
+	"time"
 )
 
-const createTableSQL = `
-CREATE TABLE IF NOT EXISTS highscores (
-	id           INTEGER PRIMARY KEY AUTOINCREMENT,
-	player_name  TEXT    NOT NULL,
-	score        INTEGER NOT NULL,
-	level        INTEGER NOT NULL DEFAULT 1,
-	difficulty   TEXT    NOT NULL,
-	created_at   TEXT    NOT NULL DEFAULT (datetime('now'))
-);`
+type httpScoreStore struct {
+	baseURL string
+	apiKey  string
+	client  *http.Client
+}
 
-const createIndexSQL = `CREATE INDEX IF NOT EXISTS idx_highscores_score ON highscores(score DESC);`
-const addLevelColumnSQL = `ALTER TABLE highscores ADD COLUMN level INTEGER NOT NULL DEFAULT 1;`
-
-type sqliteCloudStore struct {
-	db *sqlitecloud.SQCloud
+type scoreAPIRow struct {
+	PlayerName string `json:"player_name"`
+	Score      int    `json:"score"`
+	Level      int    `json:"level"`
+	Difficulty string `json:"difficulty"`
 }
 
 func InitScoreStore() StoreInit {
-	url, source := resolveSQLiteCloudURL()
+	url, key, source := resolveScoreAPI()
 	if url == "" {
 		log.Printf("highscores: disabled (no URL configured)")
 		return StoreInit{Store: NoopStore()}
 	}
-	db, err := sqlitecloud.Connect(url)
-	if err != nil {
+	store := &httpScoreStore{
+		baseURL: strings.TrimRight(url, "/"),
+		apiKey:  key,
+		client:  &http.Client{Timeout: 10 * time.Second},
+	}
+	if err := store.ping(); err != nil {
 		log.Printf("highscores: connect failed: %v", err)
 		return StoreInit{Store: NoopStore(), Configured: true, ConnectFailed: true}
 	}
 	log.Printf("highscores: connected via %s", source)
-	return StoreInit{Store: &sqliteCloudStore{db: db}}
+	return StoreInit{Store: store, Configured: true}
 }
 
 func NewScoreStore() ScoreStore {
 	return InitScoreStore().Store
 }
 
-func (s *sqliteCloudStore) Active() bool { return true }
+func (s *httpScoreStore) Active() bool { return true }
 
-func resolveSQLiteCloudURL() (url, source string) {
-	if u := strings.TrimSpace(os.Getenv("FLAPPY_SQLITECLOUD_URL")); u != "" {
-		return u, "env"
+func (s *httpScoreStore) ping() error {
+	req, err := http.NewRequest(http.MethodGet, s.baseURL+"/health", nil)
+	if err != nil {
+		return err
 	}
-	if u := readConfigJS(); u != "" {
-		return u, "config.js"
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return err
 	}
-	return "", ""
+	defer resp.Body.Close()
+	io.Copy(io.Discard, resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("health: HTTP %d", resp.StatusCode)
+	}
+	return nil
 }
 
-func readConfigJS() string {
+func resolveScoreAPI() (url, key, source string) {
+	url = strings.TrimSpace(os.Getenv("FLAPPY_SCORE_API_URL"))
+	key = strings.TrimSpace(os.Getenv("FLAPPY_SCORE_API_KEY"))
+	if url != "" {
+		return url, key, "env"
+	}
+	url, key = readConfigJS()
+	if url != "" {
+		return url, key, "config.js"
+	}
+	return "", "", ""
+}
+
+func readConfigJS() (url, key string) {
 	seen := make(map[string]bool)
 	for _, start := range configSearchRoots() {
 		dir := start
@@ -74,13 +97,13 @@ func readConfigJS() string {
 			}
 			seen[abs] = true
 
-			if u := readConfigAt(filepath.Join(dir, "web", "config.js")); u != "" {
-				return u
+			if u, k := readConfigAt(filepath.Join(dir, "web", "config.js")); u != "" {
+				return u, k
 			}
 			if modRoot := findGoModRoot(dir); modRoot != "" {
 				parent := filepath.Dir(modRoot)
-				if u := readConfigAt(filepath.Join(parent, "web", "config.js")); u != "" {
-					return u
+				if u, k := readConfigAt(filepath.Join(parent, "web", "config.js")); u != "" {
+					return u, k
 				}
 			}
 
@@ -91,7 +114,7 @@ func readConfigJS() string {
 			dir = parent
 		}
 	}
-	return ""
+	return "", ""
 }
 
 func configSearchRoots() []string {
@@ -119,16 +142,16 @@ func findGoModRoot(dir string) string {
 	return ""
 }
 
-func readConfigAt(path string) string {
+func readConfigAt(path string) (url, key string) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return ""
+		return "", ""
 	}
-	return parseConfigURL(string(data))
+	content := string(data)
+	return parseConfigJSValue(content, "FLAPPY_SCORE_API_URL"), parseConfigJSValue(content, "FLAPPY_SCORE_API_KEY")
 }
 
-func parseConfigURL(content string) string {
-	const key = "FLAPPY_SQLITECLOUD_URL"
+func parseConfigJSValue(content, key string) string {
 	idx := strings.Index(content, key)
 	if idx < 0 {
 		return ""
@@ -149,66 +172,78 @@ func parseConfigURL(content string) string {
 	if end < 0 {
 		return ""
 	}
-	url := rest[1 : end+1]
-	if strings.TrimSpace(url) == "" {
-		return ""
-	}
-	return url
+	return strings.TrimSpace(rest[1 : end+1])
 }
 
-func (s *sqliteCloudStore) EnsureSchema() error {
-	if err := s.db.Execute(createTableSQL); err != nil {
+func (s *httpScoreStore) EnsureSchema() error {
+	return nil
+}
+
+func (s *httpScoreStore) Save(name string, score int, difficulty Difficulty, level int) error {
+	body, err := json.Marshal(scoreAPIRow{
+		PlayerName: normalizePlayerName(name),
+		Score:      score,
+		Level:      level,
+		Difficulty: difficulty.Name(),
+	})
+	if err != nil {
 		return err
 	}
-	if err := s.db.Execute(addLevelColumnSQL); err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
+	req, err := http.NewRequest(http.MethodPost, s.baseURL+"/scores", bytes.NewReader(body))
+	if err != nil {
 		return err
 	}
-	return s.db.Execute(createIndexSQL)
+	s.setAuth(req)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	io.Copy(io.Discard, resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("save: HTTP %d", resp.StatusCode)
+	}
+	return nil
 }
 
-func (s *sqliteCloudStore) Save(name string, score int, difficulty Difficulty, level int) error {
-	name = escapeSQLString(normalizePlayerName(name))
-	diff := escapeSQLString(difficulty.Name())
-	sql := fmt.Sprintf(
-		"INSERT INTO highscores (player_name, score, difficulty, level) VALUES ('%s', %d, '%s', %d);",
-		name, score, diff, level,
-	)
-	return s.db.Execute(sql)
-}
-
-func (s *sqliteCloudStore) Top(limit int) ([]HighScoreEntry, error) {
-	result, err := s.db.Select(fmt.Sprintf(
-		"SELECT player_name, score, level, difficulty FROM highscores ORDER BY score DESC, level DESC LIMIT %d;",
-		limit,
-	))
+func (s *httpScoreStore) Top(limit int) ([]HighScoreEntry, error) {
+	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/scores?limit=%d", s.baseURL, limit), nil)
 	if err != nil {
 		return nil, err
 	}
-	rows := result.GetNumberOfRows()
-	entries := make([]HighScoreEntry, 0, rows)
-	for r := uint64(0); r < rows; r++ {
-		name, err := result.GetStringValue(r, 0)
-		if err != nil {
-			return nil, err
-		}
-		score, err := result.GetInt64Value(r, 1)
-		if err != nil {
-			return nil, err
-		}
-		level, err := result.GetInt64Value(r, 2)
-		if err != nil {
-			return nil, err
-		}
-		diffName, err := result.GetStringValue(r, 3)
-		if err != nil {
-			return nil, err
+	s.setAuth(req)
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		io.Copy(io.Discard, resp.Body)
+		return nil, fmt.Errorf("top: HTTP %d", resp.StatusCode)
+	}
+	var rows []scoreAPIRow
+	if err := json.NewDecoder(resp.Body).Decode(&rows); err != nil {
+		return nil, err
+	}
+	entries := make([]HighScoreEntry, 0, len(rows))
+	for _, row := range rows {
+		level := row.Level
+		if level <= 0 {
+			level = 1
 		}
 		entries = append(entries, HighScoreEntry{
-			Name:       name,
-			Score:      int(score),
-			Level:      int(level),
-			Difficulty: DifficultyFromName(diffName),
+			Name:       row.PlayerName,
+			Score:      row.Score,
+			Level:      level,
+			Difficulty: DifficultyFromName(row.Difficulty),
 		})
 	}
 	return entries, nil
+}
+
+func (s *httpScoreStore) setAuth(req *http.Request) {
+	if s.apiKey != "" {
+		req.Header.Set("X-API-Key", s.apiKey)
+	}
 }

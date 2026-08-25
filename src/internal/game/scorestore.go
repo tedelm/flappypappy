@@ -1,7 +1,5 @@
 package game
 
-import "strings"
-
 type ScoreStore interface {
 	Active() bool
 	EnsureSchema() error
@@ -14,8 +12,4 @@ type StoreInit struct {
 	Store         ScoreStore
 	Configured    bool // URL was found (env or config.js)
 	ConnectFailed bool // URL found but connection failed
-}
-
-func escapeSQLString(s string) string {
-	return strings.ReplaceAll(s, "'", "''")
 }

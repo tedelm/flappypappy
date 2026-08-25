@@ -1,0 +1,18 @@
+# Public site + score API on the same host (e.g. flappy-pappy.se).
+# SCORE_API_HOST is substituted by install-score-api.sh.
+
+{$SCORE_API_HOST} {
+	encode gzip
+
+	handle /health {
+		reverse_proxy 127.0.0.1:8088
+	}
+	handle /scores* {
+		reverse_proxy 127.0.0.1:8088
+	}
+	handle {
+		root * /var/www/flappy
+		file_server
+		try_files {path} /index.html
+	}
+}
